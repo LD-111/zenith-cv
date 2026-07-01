@@ -21,46 +21,96 @@
 
 ---
 
-## Current Architecture Overview
+## Current Architecture Overview (V2)
 
-### State Model
-- **100% client-side, no server state.** All markdown content lives in a single React `useState<string>` hook inside `page.tsx`.
-- No database, no auth, no API routes — pure client rendering for the resume editor.
-- The page is a `"use client"` component to enable interactive state.
+### Data Schema
+
+All CV data lives in browser `localStorage` under the key `zenith-cv:entries`.
+Each entry conforms to the `CvEntry` interface (defined in `src/lib/storage.ts`):
+
+```ts
+interface CvEntry {
+  id: string;           // "cv_{timestamp}_{random}" — e.g. cv_1751398200000_x8k2f
+  title: string;        // Human-readable name, set at creation or import time
+  lastModified: string; // ISO 8601 timestamp, updated on every autosave
+  markdownContent: string; // Full raw Markdown text of the CV
+}
+```
+
+### State Management
+
+- **100% client-side. Zero server state. Zero database.**
+- `localStorage` is the single source of truth for all CVs.
+- `src/lib/storage.ts` exposes all CRUD helpers: `loadAllCvs`, `saveCv`, `deleteCv`, `getCvById`, `generateId`.
+- On first visit (empty storage), the dashboard seeds one default CV from `DEFAULT_TEMPLATE`.
+
+### Routing
+
+```
+/                    → Dashboard (src/app/page.tsx)       — static
+/editor/[id]         → Editor    (src/app/editor/[id]/page.tsx) — dynamic (SSR)
+```
+
+Navigation uses `useRouter` / `router.push` from `next/navigation`. Both routes are `"use client"` components.
 
 ### Layout
+
 ```
+Dashboard (/)
 ┌────────────────────────────────────────────────────────┐
-│  TOOLBAR  (Zenith CV logo · Load .md · Download PDF)   │  ← print:hidden
+│  NAVBAR  (Zenith CV v2 · Import .md · + New CV)        │  ← bg-neutral-950 dark bar
+├────────────────────────────────────────────────────────┤
+│  Section header: "Your resumes" · count · ZENITH://LOCAL│
+│                                                        │
+│  ┌──────────┐  ┌──────────┐  ┌──────────┐             │
+│  │ CV Card  │  │ CV Card  │  │ CV Card  │  ← 3-col grid│
+│  │ title    │  │ title    │  │ title    │             │
+│  │ snippet  │  │ snippet  │  │ snippet  │             │
+│  │ modified │  │ modified │  │ modified │             │
+│  │ [Delete] │  │ [Delete] │  │ [Delete] │             │
+│  └──────────┘  └──────────┘  └──────────┘             │
+│                                                        │
+└────────────────────────────────────────────────────────┘
+           ↕  clicking a card navigates to /editor/[id]
+
+Editor (/editor/[id])
+┌────────────────────────────────────────────────────────┐
+│  TOOLBAR  (← Dashboard · title · saved · Load .md · PDF)│  ← bg-neutral-950
 ├─────────────────────────┬──────────────────────────────┤
-│                         │                              │
-│   EDITOR (left 50%)     │   PREVIEW (right 50%)        │
-│   <textarea>            │   <ReactMarkdown>            │
-│   font-mono             │   .cv-content (serif prose)  │
-│   print:hidden          │   A4 shadow card             │
+│  EDITOR (left 50%)      │  PREVIEW (right 50%)         │
+│  <textarea> font-mono   │  <ReactMarkdown> .cv-content │
+│  print:hidden           │  A4 shadow card              │
 │                         │                              │
 └─────────────────────────┴──────────────────────────────┘
-         Screen view                    ↕
-                         (window.print())
-┌────────────────────────────────────────────────────────┐
-│   PRINT / PDF output                                   │
-│   Only #cv-preview rendered · @page A4 14mm/16mm       │
-│   No toolbar, no editor, no shadows                    │
-└────────────────────────────────────────────────────────┘
 ```
 
+### Dashboard Features
+
+- **Grid layout**: 3-col on desktop, 2 on tablet, 1 on mobile. Each card shows title, 2-line content snippet, last-modified timestamp (formatted), and a delete button.
+- **Seeding**: On first load (empty localStorage), one "My First Zenith CV" is created from `DEFAULT_TEMPLATE` (Alex Rivera engineering resume).
+- **Create New CV**: Opens an inline modal overlay asking for a title and a "blank template" toggle. On confirm → saves to localStorage → navigates to `/editor/[id]`.
+- **Import .md**: `<input type="file">` reads a `.md` or `.txt` file; filename (without extension, `-`/`_` replaced with spaces) becomes the title. Saved to localStorage and appears immediately in the grid.
+- **Delete**: Each card has a delete button that transitions to an inline "Delete permanently? / Confirm / Cancel" confirmation state before wiping from localStorage.
+
+### Editor Features
+
+- **Autosave**: Debounced 500ms — every keystroke schedules a save; the timer resets on each keystroke. Saves `id + title + markdownContent + new lastModified` to localStorage.
+- **Save indicator**: Toolbar shows `● saving` (yellow pulse) while debounce is pending, then `✓ saved` (emerald) for 2.5s after each successful save.
+- **Back to Dashboard**: Flushes any pending debounced save immediately, then `router.push("/")`.
+- **Load .md**: Replaces editor content from a local file (existing V1 feature).
+- **Download PDF**: `window.print()` — same print CSS as V1.
+- **Not-found guard**: If the `id` in the URL doesn't match any localStorage entry, renders an error state with a link back to dashboard.
+
 ### PDF Export
-- `window.print()` is called from the "Download PDF" toolbar button.
-- `@media print` rules in `globals.css` hide the toolbar and editor (`print:hidden` + explicit `display:none`).
-- `@page { size: A4 portrait; margin: 14mm 16mm; }` controls physical page margins.
-- The preview article expands to `max-width: 100%` and removes all decorative padding/shadow.
-- `page-break-after: avoid` on headings prevents orphaned section titles.
+
+- Same as V1: `window.print()` triggers browser dialog.
+- `@media print` in `globals.css` hides toolbar/editor; preview fills the A4 page.
+- `@page { size: A4 portrait; margin: 14mm 16mm; }`.
 
 ### Markdown Rendering
-- `react-markdown` renders the raw markdown string into a custom component map.
-- Every HTML element (h1–h3, p, ul, li, a, hr, strong, em, code, blockquote, table) is mapped to a component with a `cv-*` CSS class.
-- Styles are defined in `globals.css` as plain CSS classes (no Tailwind inside the prose — intentional, for print-safe specificity and easy theming).
-- `remark-gfm` enables GitHub-Flavored Markdown: tables, strikethrough, autolinks, task lists.
+
+- Same as V1: `react-markdown` with custom `cv-*` CSS class map.
+- All element overrides (h1–h3, p, ul, li, a, hr, strong, em, code, blockquote, table, th, td) defined in `globals.css`.
 
 ---
 
@@ -68,74 +118,82 @@
 
 ```
 c:\Projects\zenith-cv\
-├── AGENT.md                          ← This file (AI system memory)
+├── AGENTS.md                         ← Root AI system memory (this file)
+├── README.md
+├── .gitignore
 └── zenith-cv/                        ← Next.js app root
     ├── package.json                  ← Scripts: dev, build, start, lint
     ├── next.config.ts                ← Next.js config (minimal)
-    ├── tsconfig.json                 ← TypeScript config
+    ├── tsconfig.json                 ← TypeScript (paths: @/* → src/*)
     ├── eslint.config.mjs             ← ESLint 9 flat config
     ├── postcss.config.mjs            ← PostCSS (Tailwind 4)
     ├── AGENTS.md                     ← Next.js-specific agent notes
-    ├── src/
-    │   └── app/
-    │       ├── layout.tsx            ← Root layout (Geist fonts, metadata, html/body)
-    │       ├── page.tsx              ← Main page: editor + preview + toolbar (CLIENT)
-    │       ├── globals.css           ← Tailwind 4 import + CV prose styles + print CSS
-    │       └── favicon.ico
-    └── public/                       ← Static assets
+    └── src/
+        ├── lib/
+        │   ├── storage.ts            ← CvEntry type + localStorage CRUD helpers
+        │   └── templates.ts          ← DEFAULT_TEMPLATE + BLANK_TEMPLATE strings
+        └── app/
+            ├── layout.tsx            ← Root layout (Geist fonts, metadata, html/body)
+            ├── page.tsx              ← Dashboard / Home Screen (CLIENT)
+            ├── globals.css           ← Tailwind 4 import + cv-* prose + print CSS
+            ├── favicon.ico
+            └── editor/
+                └── [id]/
+                    └── page.tsx      ← Split-screen editor for a specific CV (CLIENT)
 ```
 
 ---
 
-## Current Working State (V1)
+## ESLint Notes (Next.js 16 Stricter Rules)
 
-Implemented in the initial build prompt:
+- **`react-hooks/set-state-in-effect`**: Calling `setState` directly (synchronously) inside a `useEffect` body is an error. Wrap all setState calls in `startTransition(() => { ... })` — this satisfies the rule and marks updates as non-urgent transitions.
 
-- **Split-screen layout**: 50/50 `flex` layout — `<textarea>` editor on the left, `ReactMarkdown` preview on the right. Both panels are independently scrollable.
-- **Toolbar**: Fixed header with Zenith CV logo/brand, "Load .md" file upload button, and "Download PDF" button.
-- **Load .md**: `<input type="file" accept=".md,.txt">` reads the file via `FileReader` and replaces editor state.
-- **PDF export**: `window.print()` triggers browser print dialog. `@media print` CSS hides the editor and toolbar; the preview expands to fill the A4 page with correct margins.
-- **CV prose styles**: Custom `cv-*` CSS classes applied via `react-markdown` component overrides. Serif typography, indigo accent headers, clean hierarchy.
-- **Example resume template**: A realistic Alex Rivera (Senior Software Engineer) template pre-loaded in `INITIAL_MARKDOWN` — demonstrates headings, bullet lists, bold highlights, italic dates, horizontal rules, and links.
-- **Print page-break control**: `page-break-after: avoid` on `cv-h2`/`cv-h3`, `page-break-inside: avoid` on `cv-li`/`cv-p`.
+---
+
+## Working State (V2)
+
+All V1 features preserved, plus:
+
+- **Dashboard** with localStorage-backed CV management.
+- **Multi-CV support**: unlimited CVs, each independently stored, edited, and deleted.
+- **File import**: drag-and-drop-free `.md` upload into the dashboard.
+- **Autosave** with visual feedback in the editor toolbar.
+- **Routing**: `/` → dashboard, `/editor/[id]` → per-CV editor.
 
 ---
 
 ## Next Implementation Steps
 
-These are the recommended next features, in priority order:
+Priority order for V3+:
 
-1. **Local Storage Persistence**
-   - Auto-save markdown to `localStorage` on every keystroke (debounced ~500ms).
-   - On mount, rehydrate from `localStorage` if a saved draft exists.
-   - Show a subtle "Saved" indicator in the toolbar.
-
-2. **Multiple Resume Templates**
+1. **Multiple Resume Templates**
    - Add a `templates/` directory with 3–5 named Markdown template strings (e.g., `minimal`, `academic`, `creative`).
-   - Add a "Templates" dropdown in the toolbar that replaces editor content (with a confirm prompt if content has been modified).
+   - Add a "Templates" dropdown in the Create modal or editor toolbar.
 
-3. **Modular Section Toggling**
+2. **Modular Section Toggling**
    - Parse the markdown into named sections by H2 heading.
-   - Add a sidebar panel with toggles to show/hide individual sections (e.g., hide "Certifications" for a targeted application).
+   - Add a sidebar panel with toggles to show/hide individual sections.
+
+3. **CV Title Editing**
+   - Allow renaming a CV from the dashboard card (inline edit) or from the editor toolbar.
+   - Persist the new title to localStorage immediately.
 
 4. **Live Word & Character Count**
-   - Display word count, character count, and estimated page count in the status bar below the editor.
+   - Display word count, character count, and estimated page count in a status bar below the editor.
 
-5. **Export File Name Control**
-   - Before calling `window.print()`, prompt for or auto-derive a filename from the H1 heading (for browsers that support `document.title` override pre-print).
+5. **Syntax Highlighting in Editor**
+   - Replace the plain `<textarea>` with CodeMirror 6 (`@uiw/react-codemirror` + `@codemirror/lang-markdown`).
 
-6. **Syntax Highlighting in Editor**
-   - Replace the plain `<textarea>` with a lightweight code-mirror or CodeMirror 6 instance for markdown syntax highlighting, line numbers, and keyboard shortcuts.
-   - Candidate library: `@uiw/react-codemirror` with `@codemirror/lang-markdown`.
+6. **Dark Mode for Editor**
+   - Add a dark/light toggle to the toolbar; apply `dark:` variants to the editor panel.
+   - Preview intentionally stays white for print fidelity.
 
-7. **Dark Mode Support for Editor**
-   - Add a dark/light toggle to the toolbar.
-   - Apply `dark:` variants to the editor panel (preview intentionally stays white for print fidelity).
-
-8. **Custom Theme/Font Selector for Preview**
-   - Allow users to pick from 3 font pairings (serif, sans-serif, monospace) and 2–3 accent colour palettes that change the `cv-h2` colour and `cv-hr` colour.
+7. **Custom Theme/Font Selector for Preview**
+   - Pick from 3 font pairings and 2–3 accent colour palettes changing `cv-h2`/`cv-hr` colours.
    - Persist preference to `localStorage`.
 
+8. **Export File Name Control**
+   - Before `window.print()`, derive filename from the CV title or H1 heading via `document.title` override.
+
 9. **Shareable URL via URL Hash**
-   - Base64-encode the markdown content into the URL hash (`#`) so users can share a link that restores their exact CV content.
-   - Keep it opt-in (a "Share" button) to avoid bloating the URL on every keystroke.
+   - Base64-encode markdown content into the URL hash (`#`) as an opt-in "Share" button.
