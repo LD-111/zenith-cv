@@ -1,59 +1,78 @@
 "use client";
 
-import { useState, useEffect, useCallback, useRef, startTransition } from "react";
+import {
+  useState,
+  useEffect,
+  useCallback,
+  useRef,
+  startTransition,
+} from "react";
 import { useRouter } from "next/navigation";
 import {
-  loadAllCvs,
-  saveCv,
-  deleteCv,
-  generateId,
-  type CvEntry,
-} from "@/lib/storage";
+  pickDirectory,
+  getDirectoryHandle,
+  getDirectoryName,
+  clearDirectoryHandle,
+  scanMdFiles,
+  writeMdFile,
+  deleteMdFile,
+  fileExists,
+  sanitizeSlug,
+  slugToDisplayName,
+  formatFileSize,
+  formatDate,
+  type MdFile,
+} from "@/lib/fs-access";
 import { DEFAULT_TEMPLATE, BLANK_TEMPLATE } from "@/lib/templates";
 
-function formatDate(iso: string): string {
-  const d = new Date(iso);
-  return new Intl.DateTimeFormat("en-GB", {
-    day: "2-digit",
-    month: "short",
-    year: "numeric",
-    hour: "2-digit",
-    minute: "2-digit",
-  }).format(d);
-}
-
-function seedDefaultCv(): CvEntry {
-  const entry: CvEntry = {
-    id: generateId(),
-    title: "My First Zenith CV",
-    lastModified: new Date().toISOString(),
-    markdownContent: DEFAULT_TEMPLATE,
-  };
-  saveCv(entry);
-  return entry;
-}
+type Phase = "loading" | "connect" | "explorer";
 
 export default function Dashboard() {
   const router = useRouter();
-  const [cvs, setCvs] = useState<CvEntry[]>([]);
-  const [mounted, setMounted] = useState(false);
+  const [phase, setPhase] = useState<Phase>("loading");
+  const [dirName, setDirName] = useState<string | null>(null);
+  const [files, setFiles] = useState<MdFile[]>([]);
+  const [scanning, setScanning] = useState(false);
+  const [connectError, setConnectError] = useState<string | null>(null);
+
   const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null);
   const [showCreateModal, setShowCreateModal] = useState(false);
-  const [newTitle, setNewTitle] = useState("");
+  const [newSlug, setNewSlug] = useState("");
+  const [slugError, setSlugError] = useState<string | null>(null);
   const [useTemplate, setUseTemplate] = useState(true);
+  const [creating, setCreating] = useState(false);
+
   const createInputRef = useRef<HTMLInputElement>(null);
-  const importRef = useRef<HTMLInputElement>(null);
+
+  const refreshFiles = useCallback(async () => {
+    setScanning(true);
+    try {
+      const result = await scanMdFiles();
+      startTransition(() => setFiles(result));
+    } catch (err) {
+      console.error("Failed to scan directory:", err);
+    } finally {
+      setScanning(false);
+    }
+  }, []);
 
   useEffect(() => {
     startTransition(() => {
-      let entries = loadAllCvs();
-      if (entries.length === 0) {
-        entries = [seedDefaultCv()];
+      const handle = getDirectoryHandle();
+      if (handle) {
+        setDirName(getDirectoryName());
+        setPhase("explorer");
+      } else {
+        setPhase("connect");
       }
-      setCvs(entries);
-      setMounted(true);
     });
   }, []);
+
+  useEffect(() => {
+    if (phase === "explorer") {
+      refreshFiles();
+    }
+  }, [phase, refreshFiles]);
 
   useEffect(() => {
     if (showCreateModal) {
@@ -61,62 +80,91 @@ export default function Dashboard() {
     }
   }, [showCreateModal]);
 
-  const openEditor = useCallback(
-    (id: string) => {
-      router.push(`/editor/${id}`);
+  const handleConnect = useCallback(async () => {
+    setConnectError(null);
+    try {
+      await pickDirectory();
+      startTransition(() => {
+        setDirName(getDirectoryName());
+        setPhase("explorer");
+      });
+    } catch (err) {
+      if (err instanceof DOMException && err.name === "AbortError") return;
+      startTransition(() =>
+        setConnectError(
+          err instanceof Error ? err.message : "Failed to connect folder."
+        )
+      );
+    }
+  }, []);
+
+  const handleDisconnect = useCallback(() => {
+    clearDirectoryHandle();
+    startTransition(() => {
+      setFiles([]);
+      setDirName(null);
+      setPhase("connect");
+    });
+  }, []);
+
+  const handleOpenFile = useCallback(
+    (slug: string) => {
+      router.push("/editor/" + encodeURIComponent(slug));
     },
     [router]
   );
 
   const handleDelete = useCallback(
-    (id: string) => {
-      deleteCv(id);
-      setCvs((prev) => prev.filter((c) => c.id !== id));
-      setDeleteConfirm(null);
+    async (fileName: string) => {
+      try {
+        await deleteMdFile(fileName);
+        startTransition(() =>
+          setFiles((prev) => prev.filter((f) => f.fileName !== fileName))
+        );
+      } catch (err) {
+        console.error("Failed to delete:", err);
+      } finally {
+        setDeleteConfirm(null);
+      }
     },
     []
   );
 
-  const handleCreate = useCallback(() => {
-    const title = newTitle.trim() || "Untitled CV";
-    const entry: CvEntry = {
-      id: generateId(),
-      title,
-      lastModified: new Date().toISOString(),
-      markdownContent: useTemplate ? BLANK_TEMPLATE : "",
-    };
-    saveCv(entry);
-    setCvs((prev) => [entry, ...prev]);
-    setShowCreateModal(false);
-    setNewTitle("");
-    router.push(`/editor/${entry.id}`);
-  }, [newTitle, useTemplate, router]);
+  const handleCreate = useCallback(async () => {
+    const slug = sanitizeSlug(newSlug);
+    if (!slug) {
+      startTransition(() => setSlugError("Please enter a valid filename."));
+      return;
+    }
+    const fileName = slug + ".md";
+    setCreating(true);
+    setSlugError(null);
+    try {
+      const exists = await fileExists(fileName);
+      if (exists) {
+        startTransition(() =>
+          setSlugError(`"${fileName}" already exists in this folder.`)
+        );
+        setCreating(false);
+        return;
+      }
+      const content = useTemplate ? DEFAULT_TEMPLATE : BLANK_TEMPLATE;
+      await writeMdFile(fileName, content);
+      setShowCreateModal(false);
+      setNewSlug("");
+      router.push("/editor/" + encodeURIComponent(slug));
+    } catch (err) {
+      console.error("Failed to create file:", err);
+      startTransition(() =>
+        setSlugError(
+          err instanceof Error ? err.message : "Failed to create file."
+        )
+      );
+      setCreating(false);
+    }
+  }, [newSlug, useTemplate, router]);
 
-  const handleImport = useCallback(
-    (e: React.ChangeEvent<HTMLInputElement>) => {
-      const file = e.target.files?.[0];
-      if (!file) return;
-      const rawName = file.name.replace(/\.(md|txt)$/i, "");
-      const title = rawName.replace(/[-_]/g, " ").trim() || "Imported CV";
-      const reader = new FileReader();
-      reader.onload = (ev) => {
-        if (typeof ev.target?.result !== "string") return;
-        const entry: CvEntry = {
-          id: generateId(),
-          title,
-          lastModified: new Date().toISOString(),
-          markdownContent: ev.target.result,
-        };
-        saveCv(entry);
-        setCvs((prev) => [entry, ...prev]);
-      };
-      reader.readAsText(file);
-      e.target.value = "";
-    },
-    []
-  );
-
-  if (!mounted) {
+  if (phase === "loading") {
     return (
       <div className="flex h-screen items-center justify-center bg-neutral-950">
         <div className="flex items-center gap-3 text-neutral-400">
@@ -129,12 +177,82 @@ export default function Dashboard() {
     );
   }
 
+  if (phase === "connect") {
+    return (
+      <div className="flex flex-col min-h-screen bg-neutral-950 text-neutral-100 items-center justify-center px-6">
+        <div className="w-full max-w-md text-center">
+          <div className="flex items-center justify-center mb-8">
+            <div className="flex items-center justify-center w-16 h-16 rounded-2xl bg-indigo-600 shadow-lg shadow-indigo-900/50">
+              <svg
+                width="28"
+                height="28"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="white"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              >
+                <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" />
+                <polyline points="9 22 9 12 15 12 15 22" />
+              </svg>
+            </div>
+          </div>
+
+          <h1 className="text-3xl font-bold text-white tracking-tight mb-2">
+            Zenith CV
+          </h1>
+          <p className="text-sm font-mono text-indigo-400 mb-6 tracking-widest uppercase">
+            v3 · File System Edition
+          </p>
+
+          <p className="text-neutral-400 text-sm leading-relaxed mb-2">
+            Your CVs live as real{" "}
+            <code className="text-indigo-300 bg-indigo-950/60 px-1 py-0.5 rounded text-xs font-mono">
+              .md
+            </code>{" "}
+            files on your computer — no cloud, no database, no volatility.
+          </p>
+          <p className="text-neutral-600 text-xs leading-relaxed mb-10">
+            Select a local folder (e.g. <code className="font-mono">~/zenith-cv-files</code>) and Zenith CV
+            will read and write Markdown files directly inside it.
+          </p>
+
+          <button
+            onClick={handleConnect}
+            className="w-full flex items-center justify-center gap-3 px-6 py-4 text-base font-semibold text-white bg-indigo-600 hover:bg-indigo-500 active:bg-indigo-700 rounded-xl transition-colors shadow-lg shadow-indigo-900/30"
+          >
+            <svg
+              width="18"
+              height="18"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            >
+              <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" />
+            </svg>
+            Select Local CV Folder
+          </button>
+
+          {connectError && (
+            <p className="mt-4 text-xs text-red-400 font-mono">{connectError}</p>
+          )}
+
+          <p className="mt-8 text-xs text-neutral-700 font-mono">
+            Requires Chrome or Edge · Uses HTML5 File System Access API
+          </p>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="flex flex-col min-h-screen bg-neutral-950 text-neutral-100">
-      {/* Top Nav */}
       <header className="shrink-0 border-b border-neutral-800 bg-neutral-950">
         <div className="mx-auto max-w-6xl px-6 py-4 flex items-center justify-between">
-          {/* Brand */}
           <div className="flex items-center gap-3">
             <div className="flex items-center justify-center w-8 h-8 rounded-lg bg-indigo-600">
               <svg
@@ -158,43 +276,11 @@ export default function Dashboard() {
               <span className="text-base font-semibold text-white tracking-tight">
                 Zenith CV
               </span>
-              <span className="ml-2 text-xs text-neutral-500 font-mono">
-                v2
-              </span>
+              <span className="ml-2 text-xs text-neutral-500 font-mono">v3</span>
             </div>
           </div>
 
-          {/* Actions */}
           <div className="flex items-center gap-2">
-            <label
-              htmlFor="import-md"
-              className="cursor-pointer flex items-center gap-2 px-3 py-1.5 text-sm font-medium text-neutral-300 hover:text-white border border-neutral-700 hover:border-neutral-500 rounded-md transition-colors"
-            >
-              <svg
-                width="13"
-                height="13"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="2"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-              >
-                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
-                <polyline points="17 8 12 3 7 8" />
-                <line x1="12" y1="3" x2="12" y2="15" />
-              </svg>
-              Import .md
-            </label>
-            <input
-              id="import-md"
-              ref={importRef}
-              type="file"
-              accept=".md,.txt"
-              className="sr-only"
-              onChange={handleImport}
-            />
-
             <button
               onClick={() => setShowCreateModal(true)}
               className="flex items-center gap-2 px-4 py-1.5 text-sm font-semibold text-white bg-indigo-600 hover:bg-indigo-500 active:bg-indigo-700 rounded-md transition-colors"
@@ -218,25 +304,93 @@ export default function Dashboard() {
         </div>
       </header>
 
-      {/* Main content */}
       <main className="flex-1 mx-auto w-full max-w-6xl px-6 py-10">
-        {/* Section header */}
-        <div className="mb-6 flex items-baseline justify-between">
+        <div className="mb-6 flex items-start justify-between gap-4">
           <div>
             <h2 className="text-xs font-mono font-medium text-neutral-500 uppercase tracking-widest">
               Your resumes
             </h2>
-            <p className="mt-1 text-sm text-neutral-600">
-              {cvs.length} {cvs.length === 1 ? "document" : "documents"} stored locally
-            </p>
+            <div className="mt-1 flex items-center gap-2">
+              <div className="flex items-center gap-1.5">
+                <svg
+                  width="11"
+                  height="11"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  className="text-emerald-500"
+                >
+                  <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" />
+                </svg>
+                <span className="text-xs font-mono text-emerald-600 truncate max-w-[200px]">
+                  {dirName}
+                </span>
+              </div>
+              <span className="text-neutral-700 text-xs">·</span>
+              <span className="text-xs text-neutral-600">
+                {scanning
+                  ? "scanning…"
+                  : `${files.length} ${files.length === 1 ? "file" : "files"}`}
+              </span>
+            </div>
           </div>
-          <span className="text-xs font-mono text-neutral-700">
-            ZENITH://LOCAL
-          </span>
+          <div className="flex items-center gap-2 shrink-0">
+            <button
+              onClick={refreshFiles}
+              disabled={scanning}
+              className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-neutral-500 hover:text-white border border-neutral-800 hover:border-neutral-600 rounded-md transition-colors disabled:opacity-40"
+            >
+              <svg
+                width="11"
+                height="11"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                className={scanning ? "animate-spin" : ""}
+              >
+                <polyline points="23 4 23 10 17 10" />
+                <polyline points="1 20 1 14 7 14" />
+                <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15" />
+              </svg>
+              Refresh
+            </button>
+            <button
+              onClick={handleDisconnect}
+              className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-neutral-500 hover:text-red-400 border border-neutral-800 hover:border-red-900 rounded-md transition-colors"
+            >
+              <svg
+                width="11"
+                height="11"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              >
+                <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
+                <polyline points="16 17 21 12 16 7" />
+                <line x1="21" y1="12" x2="9" y2="12" />
+              </svg>
+              Disconnect
+            </button>
+          </div>
         </div>
 
-        {/* CV Grid */}
-        {cvs.length === 0 ? (
+        {scanning && files.length === 0 ? (
+          <div className="flex items-center justify-center py-24">
+            <div className="flex items-center gap-3 text-neutral-500">
+              <span className="inline-block w-2 h-2 rounded-full bg-indigo-500 animate-pulse" />
+              <span className="font-mono text-sm">Scanning folder…</span>
+            </div>
+          </div>
+        ) : files.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-24 text-center">
             <div className="w-16 h-16 rounded-2xl bg-neutral-800 flex items-center justify-center mb-4">
               <svg
@@ -255,30 +409,33 @@ export default function Dashboard() {
               </svg>
             </div>
             <p className="text-neutral-400 text-sm font-medium">
-              No resumes yet
+              No Markdown files found
             </p>
-            <p className="text-neutral-600 text-xs mt-1">
-              Create your first CV or import a Markdown file to get started.
+            <p className="text-neutral-600 text-xs mt-1 mb-5">
+              This folder has no <code className="font-mono">.md</code> files
+              yet.
             </p>
             <button
               onClick={() => setShowCreateModal(true)}
-              className="mt-5 px-4 py-2 text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-500 rounded-md transition-colors"
+              className="px-4 py-2 text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-500 rounded-md transition-colors"
             >
               Create New CV
             </button>
           </div>
         ) : (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-            {cvs.map((cv) => (
-              <CvCard
-                key={cv.id}
-                cv={cv}
-                confirmingDelete={deleteConfirm === cv.id}
-                onOpen={() => openEditor(cv.id)}
+            {files.map((file) => (
+              <FileCard
+                key={file.fileName}
+                file={file}
+                confirmingDelete={deleteConfirm === file.fileName}
+                onOpen={() => handleOpenFile(file.slug)}
                 onDeleteRequest={() =>
-                  setDeleteConfirm(deleteConfirm === cv.id ? null : cv.id)
+                  setDeleteConfirm(
+                    deleteConfirm === file.fileName ? null : file.fileName
+                  )
                 }
-                onDeleteConfirm={() => handleDelete(cv.id)}
+                onDeleteConfirm={() => handleDelete(file.fileName)}
                 onDeleteCancel={() => setDeleteConfirm(null)}
               />
             ))}
@@ -286,49 +443,71 @@ export default function Dashboard() {
         )}
       </main>
 
-      {/* Footer */}
       <footer className="shrink-0 border-t border-neutral-900 py-4">
         <p className="text-center text-xs font-mono text-neutral-700">
-          ZENITH CV — privacy-first · all data stored locally in your browser
+          ZENITH CV · privacy-first · files live on your machine
         </p>
       </footer>
 
-      {/* Create CV Modal */}
       {showCreateModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
           <div
             className="absolute inset-0 bg-black/70 backdrop-blur-sm"
             onClick={() => {
-              setShowCreateModal(false);
-              setNewTitle("");
+              if (!creating) {
+                setShowCreateModal(false);
+                setNewSlug("");
+                setSlugError(null);
+              }
             }}
           />
           <div className="relative w-full max-w-md bg-neutral-900 border border-neutral-700 rounded-xl shadow-2xl p-6">
             <h3 className="text-base font-semibold text-white mb-1">
-              New CV
+              New CV File
             </h3>
             <p className="text-sm text-neutral-400 mb-5">
-              Give your resume a name to identify it in the dashboard.
+              Choose a filename for your new{" "}
+              <code className="font-mono text-indigo-300 text-xs">.md</code>{" "}
+              file inside{" "}
+              <span className="text-neutral-300 font-medium">{dirName}</span>.
             </p>
 
             <label className="block text-xs font-mono font-medium text-neutral-400 uppercase tracking-widest mb-1.5">
-              Title
+              Filename
             </label>
-            <input
-              ref={createInputRef}
-              type="text"
-              value={newTitle}
-              onChange={(e) => setNewTitle(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter") handleCreate();
-                if (e.key === "Escape") {
-                  setShowCreateModal(false);
-                  setNewTitle("");
-                }
-              }}
-              placeholder="e.g. Senior Engineer — Google 2026"
-              className="w-full px-3 py-2 text-sm bg-neutral-800 border border-neutral-600 focus:border-indigo-500 focus:outline-none rounded-md text-white placeholder-neutral-600 transition-colors"
-            />
+            <div className="flex items-center gap-0">
+              <input
+                ref={createInputRef}
+                type="text"
+                value={newSlug}
+                onChange={(e) => {
+                  setNewSlug(e.target.value);
+                  setSlugError(null);
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" && !creating) handleCreate();
+                  if (e.key === "Escape") {
+                    setShowCreateModal(false);
+                    setNewSlug("");
+                    setSlugError(null);
+                  }
+                }}
+                placeholder="e.g. software-eng-v1"
+                className="flex-1 px-3 py-2 text-sm bg-neutral-800 border border-neutral-600 border-r-0 focus:border-indigo-500 focus:outline-none rounded-l-md text-white placeholder-neutral-600 transition-colors font-mono"
+              />
+              <span className="px-3 py-2 text-sm bg-neutral-700 border border-neutral-600 rounded-r-md text-neutral-500 font-mono select-none">
+                .md
+              </span>
+            </div>
+            {newSlug && sanitizeSlug(newSlug) !== newSlug && (
+              <p className="mt-1.5 text-xs text-neutral-500 font-mono">
+                Will be saved as:{" "}
+                <span className="text-indigo-400">{sanitizeSlug(newSlug)}.md</span>
+              </p>
+            )}
+            {slugError && (
+              <p className="mt-1.5 text-xs text-red-400">{slugError}</p>
+            )}
 
             <div className="mt-4 flex items-center gap-3">
               <label className="flex items-center gap-2 cursor-pointer select-none">
@@ -345,7 +524,7 @@ export default function Dashboard() {
                   />
                 </div>
                 <span className="text-xs text-neutral-400">
-                  Start from blank template
+                  Use engineering template
                 </span>
               </label>
             </div>
@@ -354,17 +533,20 @@ export default function Dashboard() {
               <button
                 onClick={() => {
                   setShowCreateModal(false);
-                  setNewTitle("");
+                  setNewSlug("");
+                  setSlugError(null);
                 }}
-                className="px-4 py-2 text-sm font-medium text-neutral-400 hover:text-white transition-colors"
+                disabled={creating}
+                className="px-4 py-2 text-sm font-medium text-neutral-400 hover:text-white transition-colors disabled:opacity-40"
               >
                 Cancel
               </button>
               <button
                 onClick={handleCreate}
-                className="px-5 py-2 text-sm font-semibold text-white bg-indigo-600 hover:bg-indigo-500 rounded-md transition-colors"
+                disabled={creating || !newSlug.trim()}
+                className="px-5 py-2 text-sm font-semibold text-white bg-indigo-600 hover:bg-indigo-500 rounded-md transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
               >
-                Create & Open
+                {creating ? "Creating…" : "Create & Open"}
               </button>
             </div>
           </div>
@@ -374,8 +556,8 @@ export default function Dashboard() {
   );
 }
 
-interface CvCardProps {
-  cv: CvEntry;
+interface FileCardProps {
+  file: MdFile;
   confirmingDelete: boolean;
   onOpen: () => void;
   onDeleteRequest: () => void;
@@ -383,21 +565,14 @@ interface CvCardProps {
   onDeleteCancel: () => void;
 }
 
-function CvCard({
-  cv,
+function FileCard({
+  file,
   confirmingDelete,
   onOpen,
   onDeleteRequest,
   onDeleteConfirm,
   onDeleteCancel,
-}: CvCardProps) {
-  const preview = cv.markdownContent
-    .split("\n")
-    .filter((l) => l.trim() && !l.startsWith("#") && !l.startsWith("---"))
-    .slice(0, 2)
-    .join(" ")
-    .slice(0, 90);
-
+}: FileCardProps) {
   return (
     <div
       className={`group relative flex flex-col bg-neutral-900 border rounded-xl overflow-hidden transition-all duration-150 ${
@@ -406,13 +581,11 @@ function CvCard({
           : "border-neutral-800 hover:border-neutral-600 hover:shadow-lg hover:shadow-black/40"
       }`}
     >
-      {/* Card clickable body */}
       <button
         onClick={onOpen}
         className="flex flex-col flex-1 text-left p-5 focus:outline-none"
         disabled={confirmingDelete}
       >
-        {/* Doc icon row */}
         <div className="flex items-start justify-between mb-3">
           <div className="flex items-center justify-center w-9 h-9 rounded-lg bg-neutral-800 border border-neutral-700">
             <svg
@@ -430,52 +603,49 @@ function CvCard({
               <polyline points="14 2 14 8 20 8" />
             </svg>
           </div>
-          {/* Open indicator — appears on hover */}
           <span className="opacity-0 group-hover:opacity-100 transition-opacity text-xs font-mono text-indigo-400">
             OPEN →
           </span>
         </div>
 
-        {/* Title */}
-        <h3 className="text-sm font-semibold text-white leading-snug mb-1 line-clamp-2">
-          {cv.title}
+        <h3 className="text-sm font-semibold text-white leading-snug mb-0.5 line-clamp-1">
+          {slugToDisplayName(file.slug)}
         </h3>
+        <p className="text-xs font-mono text-neutral-600 mb-3">
+          {file.fileName}
+        </p>
 
-        {/* Preview snippet */}
-        {preview && (
-          <p className="text-xs text-neutral-600 leading-relaxed line-clamp-2 mb-3">
-            {preview}
-          </p>
-        )}
-
-        {/* Last modified */}
-        <div className="mt-auto pt-3 border-t border-neutral-800 flex items-center gap-1.5">
-          <svg
-            width="10"
-            height="10"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="2"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            className="text-neutral-600 shrink-0"
-          >
-            <circle cx="12" cy="12" r="10" />
-            <polyline points="12 6 12 12 16 14" />
-          </svg>
-          <span className="font-mono text-xs text-neutral-600">
-            {formatDate(cv.lastModified)}
+        <div className="mt-auto pt-3 border-t border-neutral-800 flex items-center justify-between">
+          <div className="flex items-center gap-1.5">
+            <svg
+              width="10"
+              height="10"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              className="text-neutral-600 shrink-0"
+            >
+              <circle cx="12" cy="12" r="10" />
+              <polyline points="12 6 12 12 16 14" />
+            </svg>
+            <span className="font-mono text-xs text-neutral-600">
+              {formatDate(file.lastModified)}
+            </span>
+          </div>
+          <span className="font-mono text-xs text-neutral-700">
+            {formatFileSize(file.size)}
           </span>
         </div>
       </button>
 
-      {/* Delete zone */}
       <div className="shrink-0 px-5 py-3 border-t border-neutral-800 bg-neutral-900/50">
         {confirmingDelete ? (
           <div className="flex items-center justify-between">
             <span className="text-xs text-red-400 font-medium">
-              Delete permanently?
+              Delete from disk?
             </span>
             <div className="flex gap-2">
               <button
@@ -512,7 +682,7 @@ function CvCard({
               <path d="M10 11v6M14 11v6" />
               <path d="M9 6V4h6v2" />
             </svg>
-            Delete
+            Delete file
           </button>
         )}
       </div>

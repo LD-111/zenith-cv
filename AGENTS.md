@@ -21,95 +21,162 @@
 
 ---
 
-## Current Architecture Overview (V2)
+## Current Architecture Overview (V3 — File System Edition)
 
-### Data Schema
+### Storage Model
 
-All CV data lives in browser `localStorage` under the key `zenith-cv:entries`.
-Each entry conforms to the `CvEntry` interface (defined in `src/lib/storage.ts`):
+**No `localStorage`. No database. No cloud.**
+All CV data lives as plain `.md` files inside a user-selected local directory on their machine.
+The HTML5 **File System Access API** (`showDirectoryPicker` / `FileSystemDirectoryHandle` / `FileSystemFileHandle`) is the single source of truth.
+
+### File Identity
+
+Each CV is identified by its **filename slug** (the `.md` filename without extension).
+
+| Filename on disk       | URL slug           | Display Name          |
+|------------------------|--------------------|-----------------------|
+| `software-eng-v1.md`  | `software-eng-v1` | `Software Eng V1`     |
+| `my-resume.md`        | `my-resume`        | `My Resume`           |
+
+URL routing: `/editor/software-eng-v1` → `params.id = "software-eng-v1"`.
+
+### Module-Level State (`src/lib/fs-access.ts`)
+
+A single module-level variable `_dirHandle: FileSystemDirectoryHandle | null` holds the active directory connection.
+This persists across Next.js route changes within the same browser tab session (module state is never GC'd during client-side navigation).
+
+Key exported functions:
+
+| Function | Description |
+|---|---|
+| `pickDirectory()` | Calls `window.showDirectoryPicker({ mode: "readwrite" })`, stores handle |
+| `getDirectoryHandle()` | Returns current `_dirHandle` (null if not connected) |
+| `getDirectoryName()` | Returns the folder name string |
+| `clearDirectoryHandle()` | Resets `_dirHandle` to null (disconnect) |
+| `scanMdFiles()` | `for await` over `dirHandle.entries()`, returns `MdFile[]` sorted by lastModified desc |
+| `readMdFile(fileName)` | Gets file handle → `getFile()` → `.text()` |
+| `writeMdFile(fileName, content)` | Gets handle with `{ create: true }` → `createWritable()` → `write()` → `close()` |
+| `deleteMdFile(fileName)` | `dirHandle.removeEntry(fileName)` |
+| `fileExists(fileName)` | `getFileHandle()` wrapped in try/catch |
+| `sanitizeSlug(input)` | Lowercases, replaces spaces with `-`, strips invalid chars |
+| `slugToDisplayName(slug)` | Converts `my-resume` → `My Resume` |
+
+### `MdFile` Interface
 
 ```ts
-interface CvEntry {
-  id: string;           // "cv_{timestamp}_{random}" — e.g. cv_1751398200000_x8k2f
-  title: string;        // Human-readable name, set at creation or import time
-  lastModified: string; // ISO 8601 timestamp, updated on every autosave
-  markdownContent: string; // Full raw Markdown text of the CV
+interface MdFile {
+  slug: string;       // "software-eng-v1" — used as URL id param
+  fileName: string;   // "software-eng-v1.md" — actual filename on disk
+  lastModified: number; // Unix ms timestamp from File.lastModified
+  size: number;       // bytes
 }
 ```
-
-### State Management
-
-- **100% client-side. Zero server state. Zero database.**
-- `localStorage` is the single source of truth for all CVs.
-- `src/lib/storage.ts` exposes all CRUD helpers: `loadAllCvs`, `saveCv`, `deleteCv`, `getCvById`, `generateId`.
-- On first visit (empty storage), the dashboard seeds one default CV from `DEFAULT_TEMPLATE`.
 
 ### Routing
 
 ```
-/                    → Dashboard (src/app/page.tsx)       — static
-/editor/[id]         → Editor    (src/app/editor/[id]/page.tsx) — dynamic (SSR)
+/                    → Dashboard (src/app/page.tsx)           — CLIENT
+/editor/[id]         → Editor    (src/app/editor/[id]/page.tsx) — CLIENT
 ```
 
-Navigation uses `useRouter` / `router.push` from `next/navigation`. Both routes are `"use client"` components.
+`id` param is `encodeURIComponent(slug)` when navigating, decoded with `decodeURIComponent(params.id)` in the editor.
+
+### Dashboard — Two Phases
+
+**Phase 1: `connect`** (no `_dirHandle`)
+- Full-screen dark landing with brand, explanation text, and a single "Select Local CV Folder" button.
+- Calls `pickDirectory()` on click; `AbortError` (user cancelled) is silently ignored; other errors shown inline.
+- Browser compatibility note: requires Chrome or Edge (File System Access API not available in Firefox/Safari).
+
+**Phase 2: `explorer`** (handle is set)
+- Navbar with "New CV" button.
+- Connected folder name shown with emerald indicator.
+- "Refresh" button re-scans directory; "Disconnect" calls `clearDirectoryHandle()` and returns to Phase 1.
+- File grid (3-col desktop / 2 tablet / 1 mobile): shows display name, filename, last modified, file size, delete action.
+- **Create New CV modal**: prompts for a filename slug, sanitizes it, checks for duplicates via `fileExists()`, writes the file via `writeMdFile()`, navigates to `/editor/[slug]`.
+- **Delete**: inline "Delete from disk? / Confirm / Cancel" confirmation before `deleteMdFile()`.
 
 ### Layout
 
 ```
-Dashboard (/)
+Connect Screen (/ — no workspace)
 ┌────────────────────────────────────────────────────────┐
-│  NAVBAR  (Zenith CV v2 · Import .md · + New CV)        │  ← bg-neutral-950 dark bar
+│                                                        │
+│           [folder icon]  Zenith CV  v3                 │
+│                                                        │
+│    "Your CVs live as .md files on your computer"       │
+│                                                        │
+│          [ Select Local CV Folder ]                    │
+│                                                        │
+│     Requires Chrome or Edge · File System Access API   │
+└────────────────────────────────────────────────────────┘
+
+Explorer Dashboard (/ — workspace connected)
+┌────────────────────────────────────────────────────────┐
+│  NAVBAR  (Zenith CV v3 · + New CV)                     │  ← bg-neutral-950
 ├────────────────────────────────────────────────────────┤
-│  Section header: "Your resumes" · count · ZENITH://LOCAL│
+│  "Your resumes" · 📁 folder-name · N files             │
+│  [Refresh]  [Disconnect]                               │
 │                                                        │
 │  ┌──────────┐  ┌──────────┐  ┌──────────┐             │
-│  │ CV Card  │  │ CV Card  │  │ CV Card  │  ← 3-col grid│
-│  │ title    │  │ title    │  │ title    │             │
-│  │ snippet  │  │ snippet  │  │ snippet  │             │
+│  │ File Card│  │ File Card│  │ File Card│  ← 3-col    │
+│  │ name     │  │ name     │  │ name     │             │
+│  │ slug.md  │  │ slug.md  │  │ slug.md  │             │
 │  │ modified │  │ modified │  │ modified │             │
+│  │ size     │  │ size     │  │ size     │             │
 │  │ [Delete] │  │ [Delete] │  │ [Delete] │             │
 │  └──────────┘  └──────────┘  └──────────┘             │
-│                                                        │
 └────────────────────────────────────────────────────────┘
-           ↕  clicking a card navigates to /editor/[id]
 
-Editor (/editor/[id])
+Editor (/editor/[slug])
 ┌────────────────────────────────────────────────────────┐
-│  TOOLBAR  (← Dashboard · title · saved · Load .md · PDF)│  ← bg-neutral-950
+│  TOOLBAR  (← Dashboard · name · slug.md · saving · PDF)│  ← bg-neutral-950
 ├─────────────────────────┬──────────────────────────────┤
 │  EDITOR (left 50%)      │  PREVIEW (right 50%)         │
 │  <textarea> font-mono   │  <ReactMarkdown> .cv-content │
 │  print:hidden           │  A4 shadow card              │
-│                         │                              │
 └─────────────────────────┴──────────────────────────────┘
 ```
 
-### Dashboard Features
+### Editor Features (V3)
 
-- **Grid layout**: 3-col on desktop, 2 on tablet, 1 on mobile. Each card shows title, 2-line content snippet, last-modified timestamp (formatted), and a delete button.
-- **Seeding**: On first load (empty localStorage), one "My First Zenith CV" is created from `DEFAULT_TEMPLATE` (Alex Rivera engineering resume).
-- **Create New CV**: Opens an inline modal overlay asking for a title and a "blank template" toggle. On confirm → saves to localStorage → navigates to `/editor/[id]`.
-- **Import .md**: `<input type="file">` reads a `.md` or `.txt` file; filename (without extension, `-`/`_` replaced with spaces) becomes the title. Saved to localStorage and appears immediately in the grid.
-- **Delete**: Each card has a delete button that transitions to an inline "Delete permanently? / Confirm / Cancel" confirmation state before wiping from localStorage.
+- **File loading**: On mount, checks `getDirectoryHandle()`. If null → `no-workspace` error state with link to dashboard. Reads file content via `readMdFile(fileName)`. `NotFoundError` → `not-found` state.
+- **Autosave**: Debounced 500ms. After debounce fires, calls `await writeMdFile(fileName, markdown)` (stream write to disk). Save states: `idle` → `saving` (yellow pulse) → `saved` (emerald, 2.5s) | `error` (red).
+- **Flush on back**: "Back to Dashboard" clears the debounce timer and calls `writeMdFile` immediately before `router.push("/")`.
+- **Load .md**: `<input type="file">` FileReader replaces editor content (content is then autosaved to disk).
+- **Download PDF**: `window.print()` — same print CSS as before.
+- **currentMarkdown ref**: A `useRef` tracks latest content for the flush-on-back case without stale closure issues.
 
-### Editor Features
+### Stream Write Architecture
 
-- **Autosave**: Debounced 500ms — every keystroke schedules a save; the timer resets on each keystroke. Saves `id + title + markdownContent + new lastModified` to localStorage.
-- **Save indicator**: Toolbar shows `● saving` (yellow pulse) while debounce is pending, then `✓ saved` (emerald) for 2.5s after each successful save.
-- **Back to Dashboard**: Flushes any pending debounced save immediately, then `router.push("/")`.
-- **Load .md**: Replaces editor content from a local file (existing V1 feature).
-- **Download PDF**: `window.print()` — same print CSS as V1.
-- **Not-found guard**: If the `id` in the URL doesn't match any localStorage entry, renders an error state with a link back to dashboard.
+Every autosave uses the `FileSystemWritableFileStream` pattern:
+```
+getFileHandle(name, { create: true })
+  → createWritable()       // opens a writable stream (atomic, temp file under the hood)
+    → writable.write(content)
+    → writable.close()     // atomically swaps the temp file into place
+```
+This ensures no partial writes corrupt the file.
 
-### PDF Export
+### Error Handling
 
-- Same as V1: `window.print()` triggers browser dialog.
+| Error | Source | Handling |
+|---|---|---|
+| `DOMException: AbortError` | User cancelled `showDirectoryPicker` | Silently ignored |
+| `DOMException: NotFoundError` | File missing when editor opens | Shows `not-found` state |
+| `DOMException: NotAllowedError` | Permission revoked mid-session | `writeMdFile` rejects → `saveStatus = "error"` shown in toolbar |
+| Unsupported browser | No `showDirectoryPicker` in `window` | Error message shown before picker call |
+| Duplicate filename on create | `fileExists()` returns true | Inline error in create modal |
+
+## PDF Export
+
+- Same as V1/V2: `window.print()` triggers browser print dialog.
 - `@media print` in `globals.css` hides toolbar/editor; preview fills the A4 page.
 - `@page { size: A4 portrait; margin: 14mm 16mm; }`.
 
-### Markdown Rendering
+## Markdown Rendering
 
-- Same as V1: `react-markdown` with custom `cv-*` CSS class map.
+- Same as V1/V2: `react-markdown` with custom `cv-*` CSS class map.
 - All element overrides (h1–h3, p, ul, li, a, hr, strong, em, code, blockquote, table, th, td) defined in `globals.css`.
 
 ---
@@ -130,16 +197,17 @@ c:\Projects\zenith-cv\
     ├── AGENTS.md                     ← Next.js-specific agent notes
     └── src/
         ├── lib/
-        │   ├── storage.ts            ← CvEntry type + localStorage CRUD helpers
+        │   ├── fs-access.ts          ← File System Access API module (module-level state + all FS ops)
+        │   ├── storage.ts            ← (legacy) CvEntry type + localStorage CRUD — no longer used by main app
         │   └── templates.ts          ← DEFAULT_TEMPLATE + BLANK_TEMPLATE strings
         └── app/
             ├── layout.tsx            ← Root layout (Geist fonts, metadata, html/body)
-            ├── page.tsx              ← Dashboard / Home Screen (CLIENT)
+            ├── page.tsx              ← Dashboard: Connect Workspace OR File Explorer (CLIENT)
             ├── globals.css           ← Tailwind 4 import + cv-* prose + print CSS
             ├── favicon.ico
             └── editor/
                 └── [id]/
-                    └── page.tsx      ← Split-screen editor for a specific CV (CLIENT)
+                    └── page.tsx      ← Split-screen editor; [id] = slug (filename without .md) (CLIENT)
 ```
 
 ---
@@ -150,15 +218,17 @@ c:\Projects\zenith-cv\
 
 ---
 
-## Working State (V2)
+## Working State (V3 — File System Edition)
 
-All V1 features preserved, plus:
+All V2 features preserved (editor, PDF export, print CSS, ReactMarkdown rendering), plus:
 
-- **Dashboard** with localStorage-backed CV management.
-- **Multi-CV support**: unlimited CVs, each independently stored, edited, and deleted.
-- **File import**: drag-and-drop-free `.md` upload into the dashboard.
-- **Autosave** with visual feedback in the editor toolbar.
-- **Routing**: `/` → dashboard, `/editor/[id]` → per-CV editor.
+- **True local file storage**: CVs are real `.md` files on the user's disk — no localStorage, no cloud.
+- **Workspace Connect flow**: Clean landing screen with `showDirectoryPicker()` to select any local folder.
+- **File explorer**: Scans for `.md` files, shows filename + last modified + size. Reconnect / Disconnect / Refresh.
+- **File-based autosave**: Every keystroke debounce (500ms) streams content to disk via `FileSystemWritableFileStream`. Atomic write (no corruption risk).
+- **Create New CV**: Prompts for filename slug, sanitizes, checks duplicates, writes `.md` file, opens editor.
+- **Delete from disk**: Inline confirmation, then `dirHandle.removeEntry(fileName)`.
+- **Graceful degradation**: Editor detects missing workspace (page refresh) and shows reconnect prompt.
 
 ---
 
