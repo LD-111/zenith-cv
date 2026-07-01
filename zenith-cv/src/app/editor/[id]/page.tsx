@@ -16,17 +16,28 @@ import {
   writeMdFile,
   slugToDisplayName,
 } from "@/lib/fs-access";
+import {
+  isVirtualId,
+  getVirtualCV,
+  updateVirtualCV,
+} from "@/lib/virtual-store";
 
 type SaveStatus = "idle" | "saving" | "saved" | "error";
 type LoadState = "loading" | "ready" | "no-workspace" | "not-found" | "error";
+type EditorMode = "local" | "virtual";
 
 export default function EditorPage() {
   const params = useParams<{ id: string }>();
   const router = useRouter();
 
-  const slug = decodeURIComponent(params.id);
-  const fileName = slug + ".md";
-  const displayName = slugToDisplayName(slug);
+  const rawId = decodeURIComponent(params.id);
+  const mode: EditorMode = isVirtualId(rawId) ? "virtual" : "local";
+
+  const slug = mode === "local" ? rawId : rawId;
+  const fileName = mode === "local" ? slug + ".md" : (getVirtualCV(rawId)?.fileName ?? rawId + ".md");
+  const displayName = mode === "virtual"
+    ? slugToDisplayName(getVirtualCV(rawId)?.name ?? rawId)
+    : slugToDisplayName(slug);
 
   const [loadState, setLoadState] = useState<LoadState>("loading");
   const [markdown, setMarkdown] = useState<string>("");
@@ -39,6 +50,20 @@ export default function EditorPage() {
   const currentMarkdown = useRef<string>("");
 
   useEffect(() => {
+    if (mode === "virtual") {
+      const cv = getVirtualCV(rawId);
+      if (!cv) {
+        startTransition(() => setLoadState("not-found"));
+        return;
+      }
+      currentMarkdown.current = cv.content;
+      startTransition(() => {
+        setMarkdown(cv.content);
+        setLoadState("ready");
+      });
+      return;
+    }
+
     const dir = getDirectoryHandle();
     if (!dir) {
       startTransition(() => setLoadState("no-workspace"));
@@ -54,8 +79,7 @@ export default function EditorPage() {
         });
       })
       .catch((err: unknown) => {
-        const msg =
-          err instanceof Error ? err.message : String(err);
+        const msg = err instanceof Error ? err.message : String(err);
         if (
           err instanceof DOMException &&
           (err.name === "NotFoundError" || err.name === "TypeMismatchError")
@@ -68,7 +92,7 @@ export default function EditorPage() {
           });
         }
       });
-  }, [fileName]);
+  }, [rawId, fileName, mode]);
 
   useEffect(() => {
     if (loadState !== "ready") return;
@@ -84,12 +108,13 @@ export default function EditorPage() {
 
     saveTimerRef.current = setTimeout(async () => {
       try {
-        await writeMdFile(fileName, markdown);
+        if (mode === "virtual") {
+          updateVirtualCV(rawId, markdown);
+        } else {
+          await writeMdFile(fileName, markdown);
+        }
         setSaveStatus("saved");
-        savedTimerRef.current = setTimeout(
-          () => setSaveStatus("idle"),
-          2500
-        );
+        savedTimerRef.current = setTimeout(() => setSaveStatus("idle"), 2500);
       } catch (err) {
         console.error("Autosave failed:", err);
         setSaveStatus("error");
@@ -99,20 +124,24 @@ export default function EditorPage() {
     return () => {
       if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
     };
-  }, [markdown, loadState, fileName]);
+  }, [markdown, loadState, fileName, mode, rawId]);
 
   const handleBackToDashboard = useCallback(async () => {
     if (saveTimerRef.current) {
       clearTimeout(saveTimerRef.current);
       saveTimerRef.current = null;
       try {
-        await writeMdFile(fileName, currentMarkdown.current);
+        if (mode === "virtual") {
+          updateVirtualCV(rawId, currentMarkdown.current);
+        } else {
+          await writeMdFile(fileName, currentMarkdown.current);
+        }
       } catch {
         // best-effort flush
       }
     }
     router.push("/");
-  }, [router, fileName]);
+  }, [router, fileName, mode, rawId]);
 
   const handlePrint = useCallback(() => {
     window.print();
@@ -139,9 +168,7 @@ export default function EditorPage() {
       <div className="flex h-screen items-center justify-center bg-neutral-950">
         <div className="flex items-center gap-3 text-neutral-400">
           <span className="inline-block w-2 h-2 rounded-full bg-indigo-500 animate-pulse" />
-          <span className="font-mono text-sm tracking-widest uppercase">
-            Loading…
-          </span>
+          <span className="font-mono text-sm tracking-widest uppercase">Loading…</span>
         </div>
       </div>
     );
@@ -151,26 +178,13 @@ export default function EditorPage() {
     return (
       <div className="flex flex-col h-screen items-center justify-center bg-neutral-950 text-neutral-400 gap-4 px-6 text-center">
         <div className="flex items-center justify-center w-12 h-12 rounded-xl bg-neutral-800 mb-2">
-          <svg
-            width="22"
-            height="22"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="1.5"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            className="text-neutral-500"
-          >
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" className="text-neutral-500">
             <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" />
           </svg>
         </div>
-        <p className="font-mono text-sm text-neutral-300">
-          Workspace not connected
-        </p>
+        <p className="font-mono text-sm text-neutral-300">Workspace not connected</p>
         <p className="text-xs text-neutral-600 max-w-xs">
-          The editor requires a connected local folder. Please go back to the
-          dashboard and select your CV folder.
+          The editor requires a connected local folder. Please go back to the dashboard and select your CV folder.
         </p>
         <button
           onClick={() => router.push("/")}
@@ -188,6 +202,11 @@ export default function EditorPage() {
         <p className="font-mono text-sm">
           <code className="text-indigo-400">{fileName}</code> not found.
         </p>
+        {mode === "virtual" && (
+          <p className="text-xs text-neutral-600 max-w-xs text-center px-4">
+            Virtual CVs are stored in session memory and are lost on page refresh.
+          </p>
+        )}
         <button
           onClick={() => router.push("/")}
           className="text-indigo-400 hover:text-indigo-300 text-sm underline underline-offset-4 transition-colors"
@@ -221,16 +240,7 @@ export default function EditorPage() {
             onClick={handleBackToDashboard}
             className="flex items-center gap-1.5 px-2.5 py-1.5 text-sm font-medium text-neutral-400 hover:text-white hover:bg-neutral-800 rounded-md transition-colors"
           >
-            <svg
-              width="14"
-              height="14"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            >
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
               <line x1="19" y1="12" x2="5" y2="12" />
               <polyline points="12 19 5 12 12 5" />
             </svg>
@@ -241,16 +251,7 @@ export default function EditorPage() {
 
           <div className="flex items-center gap-2">
             <div className="flex items-center justify-center w-6 h-6 rounded-md bg-indigo-600">
-              <svg
-                width="12"
-                height="12"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="white"
-                strokeWidth="2.5"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-              >
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
                 <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
                 <polyline points="14 2 14 8 20 8" />
               </svg>
@@ -262,6 +263,20 @@ export default function EditorPage() {
               {fileName}
             </span>
           </div>
+
+          <span className="text-neutral-700 select-none hidden sm:inline">|</span>
+
+          {mode === "local" ? (
+            <span className="hidden sm:flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-emerald-950/60 border border-emerald-800/40 text-xs font-mono text-emerald-400">
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse inline-block" />
+              Local File Mode
+            </span>
+          ) : (
+            <span className="hidden sm:flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-amber-950/60 border border-amber-800/40 text-xs font-mono text-amber-400">
+              <span className="w-1.5 h-1.5 rounded-full bg-amber-400 inline-block" />
+              Web Sandbox Mode
+            </span>
+          )}
         </div>
 
         <div className="flex items-center gap-2">
@@ -274,16 +289,7 @@ export default function EditorPage() {
             )}
             {saveStatus === "saved" && (
               <span className="flex items-center gap-1.5 text-xs text-emerald-500 font-mono">
-                <svg
-                  width="11"
-                  height="11"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="2.5"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                >
+                <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
                   <polyline points="20 6 9 17 4 12" />
                 </svg>
                 saved
@@ -291,16 +297,7 @@ export default function EditorPage() {
             )}
             {saveStatus === "error" && (
               <span className="flex items-center gap-1.5 text-xs text-red-400 font-mono">
-                <svg
-                  width="11"
-                  height="11"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="2.5"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                >
+                <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
                   <circle cx="12" cy="12" r="10" />
                   <line x1="12" y1="8" x2="12" y2="12" />
                   <line x1="12" y1="16" x2="12.01" y2="16" />
@@ -314,16 +311,7 @@ export default function EditorPage() {
             htmlFor="md-upload"
             className="cursor-pointer flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-neutral-400 hover:text-white border border-neutral-700 hover:border-neutral-500 rounded-md transition-colors"
           >
-            <svg
-              width="13"
-              height="13"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            >
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
               <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
               <polyline points="17 8 12 3 7 8" />
               <line x1="12" y1="3" x2="12" y2="15" />
@@ -342,16 +330,7 @@ export default function EditorPage() {
             onClick={handlePrint}
             className="flex items-center gap-1.5 px-4 py-1.5 text-sm font-semibold text-white bg-indigo-600 hover:bg-indigo-500 active:bg-indigo-800 rounded-md transition-colors"
           >
-            <svg
-              width="13"
-              height="13"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            >
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
               <polyline points="6 9 6 2 18 2 18 9" />
               <path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2" />
               <rect x="6" y="14" width="12" height="8" />
@@ -369,9 +348,7 @@ export default function EditorPage() {
               <span className="w-3 h-3 rounded-full bg-yellow-400" />
               <span className="w-3 h-3 rounded-full bg-green-400" />
             </div>
-            <span className="text-xs text-neutral-400 font-mono ml-1">
-              {fileName}
-            </span>
+            <span className="text-xs text-neutral-400 font-mono ml-1">{fileName}</span>
           </div>
           <textarea
             value={markdown}
@@ -399,56 +376,25 @@ export default function EditorPage() {
               <ReactMarkdown
                 remarkPlugins={[remarkGfm]}
                 components={{
-                  h1: ({ children }) => (
-                    <h1 className="cv-h1">{children}</h1>
-                  ),
-                  h2: ({ children }) => (
-                    <h2 className="cv-h2">{children}</h2>
-                  ),
-                  h3: ({ children }) => (
-                    <h3 className="cv-h3">{children}</h3>
-                  ),
+                  h1: ({ children }) => <h1 className="cv-h1">{children}</h1>,
+                  h2: ({ children }) => <h2 className="cv-h2">{children}</h2>,
+                  h3: ({ children }) => <h3 className="cv-h3">{children}</h3>,
                   p: ({ children }) => <p className="cv-p">{children}</p>,
-                  ul: ({ children }) => (
-                    <ul className="cv-ul">{children}</ul>
-                  ),
-                  li: ({ children }) => (
-                    <li className="cv-li">{children}</li>
-                  ),
-                  strong: ({ children }) => (
-                    <strong className="cv-strong">{children}</strong>
-                  ),
-                  em: ({ children }) => (
-                    <em className="cv-em">{children}</em>
-                  ),
+                  ul: ({ children }) => <ul className="cv-ul">{children}</ul>,
+                  li: ({ children }) => <li className="cv-li">{children}</li>,
+                  strong: ({ children }) => <strong className="cv-strong">{children}</strong>,
+                  em: ({ children }) => <em className="cv-em">{children}</em>,
                   a: ({ href, children }) => (
-                    <a
-                      href={href}
-                      className="cv-a"
-                      target="_blank"
-                      rel="noopener noreferrer"
-                    >
+                    <a href={href} className="cv-a" target="_blank" rel="noopener noreferrer">
                       {children}
                     </a>
                   ),
                   hr: () => <hr className="cv-hr" />,
-                  code: ({ children }) => (
-                    <code className="cv-code">{children}</code>
-                  ),
-                  blockquote: ({ children }) => (
-                    <blockquote className="cv-blockquote">
-                      {children}
-                    </blockquote>
-                  ),
-                  table: ({ children }) => (
-                    <table className="cv-table">{children}</table>
-                  ),
-                  th: ({ children }) => (
-                    <th className="cv-th">{children}</th>
-                  ),
-                  td: ({ children }) => (
-                    <td className="cv-td">{children}</td>
-                  ),
+                  code: ({ children }) => <code className="cv-code">{children}</code>,
+                  blockquote: ({ children }) => <blockquote className="cv-blockquote">{children}</blockquote>,
+                  table: ({ children }) => <table className="cv-table">{children}</table>,
+                  th: ({ children }) => <th className="cv-th">{children}</th>,
+                  td: ({ children }) => <td className="cv-td">{children}</td>,
                 }}
               >
                 {markdown}

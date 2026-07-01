@@ -75,6 +75,59 @@ Relevant coursework: Distributed Systems, Algorithms & Complexity, Compilers, Da
 - Open Source Contributor: Kubernetes, Prometheus
 `;
 
+export const DEMO_TEMPLATE_PM = `# Jordan Kim
+**Senior Product Manager** | New York, NY
+jordan.kim@email.com · (212) 555-0147 · [linkedin.com/in/jordankim](https://linkedin.com) · [jordankim.io](https://jordankim.io)
+
+---
+
+## Summary
+
+Driven Product Manager with 6+ years of experience turning customer insights into shipped features across B2B SaaS and consumer platforms. Skilled at aligning engineering, design, and business stakeholders around a shared roadmap. Track record of growing activation rates, reducing churn, and launching zero-to-one products used by millions.
+
+---
+
+## Core Competencies
+
+**Discovery & Strategy:** Jobs-to-be-Done, User Research, Opportunity Scoring, OKR Setting
+**Delivery:** Agile/Scrum, JIRA, Linear, Sprint Planning, Roadmap Prioritisation
+**Analytics:** Mixpanel, Amplitude, SQL, A/B Testing, Funnel Analysis
+**Collaboration:** Figma, Notion, Confluence, Miro, Loom
+
+---
+
+## Experience
+
+### Senior Product Manager — Beacon Analytics
+*Feb 2021 – Present · New York, NY*
+
+- Owned the core dashboard product; grew weekly active users by **68%** in 12 months via a redesigned onboarding flow backed by JTBD interviews with 40+ enterprise customers.
+- Led cross-functional squad of 8 to ship real-time alerting feature, reducing customer churn by **22%** within two quarters.
+- Defined and maintained a 6-month roadmap prioritised through RICE scoring; presented monthly to C-suite and board.
+- Launched a self-serve trial tier from zero, generating **$1.2M ARR** within 9 months.
+
+### Product Manager — Cloudpath Inc.
+*May 2018 – Jan 2021 · Remote*
+
+- Shipped 14 features across a B2B logistics SaaS platform serving **300+ enterprise clients**.
+- Ran 25+ user interviews per quarter; synthesised insights into actionable epics, cutting feature rework cycles by 35%.
+- Established NPS tracking and closed-loop feedback, raising NPS from 32 to 61 over 18 months.
+
+---
+
+## Education
+
+**B.A. Economics & Computer Science** — Columbia University · *2014 – 2018*
+
+---
+
+## Certifications & Speaking
+
+- Certified Scrum Product Owner (CSPO) — Scrum Alliance, 2020
+- Speaker, ProductCon 2023 — *"From Insight to Impact: Research-Driven Roadmapping"*
+- Mentor, Product School Alumni Network
+`;
+
 export const BLANK_TEMPLATE = `# Your Name
 **Job Title** | City, Country
 email@example.com · [linkedin.com/in/yourprofile](https://linkedin.com) · [github.com/yourhandle](https://github.com)

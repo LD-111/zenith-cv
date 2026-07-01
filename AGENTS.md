@@ -21,17 +21,106 @@
 
 ---
 
-## Current Architecture Overview (V3 — File System Edition)
+## Current Architecture Overview (V4 — Hybrid File Edition)
 
 ### Storage Model
 
-**No `localStorage`. No database. No cloud.**
-All CV data lives as plain `.md` files inside a user-selected local directory on their machine.
-The HTML5 **File System Access API** (`showDirectoryPicker` / `FileSystemDirectoryHandle` / `FileSystemFileHandle`) is the single source of truth.
+**Hybrid strategy — two distinct modes determined at runtime by browser feature detection.**
+
+#### Local File Mode (Case A)
+Active when `window.showDirectoryPicker` is available (Chrome / Edge).
+- All CV data lives as plain `.md` files inside a user-selected local directory.
+- The HTML5 **File System Access API** (`showDirectoryPicker` / `FileSystemDirectoryHandle` / `FileSystemFileHandle`) is the single source of truth.
+- No `localStorage`. No database. No cloud.
+
+#### Web Sandbox Mode (Case B)
+Active when `showDirectoryPicker` is **not** available (Firefox / Safari / all web deployments), OR when the user explicitly opts in via "Continue in Web Sandbox Mode" on the connect screen.
+- CVs are stored as `VirtualCV` objects in a **module-level `Map`** inside `src/lib/virtual-store.ts`.
+- State persists across client-side route changes within the same tab session (module state survives Next.js navigation), but **is lost on page refresh**.
+- Users are clearly informed via an amber banner and mode badge.
+- Users can: create virtual CVs from templates, upload existing `.md` files, or open pre-populated demo templates (Software Engineer, Product Manager).
+
+### Feature Detection (`src/lib/use-fs-support.ts`)
+
+```ts
+export function isFsSupported(): boolean
+export function useFsSupport(): { supported: boolean; checked: boolean }
+```
+
+- `isFsSupported()` — pure synchronous check, safe to call inside `useEffect`.
+- `useFsSupport()` — React hook, returns `{ supported, checked }` for components that need reactive detection.
+- Both correctly handle SSR (guard with `typeof window !== "undefined"`).
+
+### Mode Routing Decision (Dashboard `page.tsx`)
+
+```
+On mount (useEffect):
+  isFsSupported() === false  →  phase = "sandbox"
+  isFsSupported() === true:
+    getDirectoryHandle() === null  →  phase = "connect"
+    getDirectoryHandle() !== null  →  phase = "explorer"
+```
+
+The connect screen (Case A, not yet connected) also offers a "Continue in Web Sandbox Mode" escape hatch, allowing Chrome users to use sandbox mode without picking a folder.
+
+### Virtual CV Store (`src/lib/virtual-store.ts`)
+
+Module-level `Map<string, VirtualCV>` — never GC'd during client-side navigation.
+
+```ts
+interface VirtualCV {
+  id: string;         // "virtual_<timestamp>_<random6>" — globally unique, used as URL id param
+  name: string;       // slug-style name, e.g. "my-resume"
+  fileName: string;   // "my-resume.md"
+  content: string;    // full Markdown string
+  lastModified: number;
+  size: number;       // byte count via TextEncoder
+}
+```
+
+Key exported functions:
+
+| Function | Description |
+|---|---|
+| `createVirtualCV(name, content)` | Creates entry in Map, returns `VirtualCV` |
+| `getVirtualCV(id)` | Returns `VirtualCV \| null` |
+| `updateVirtualCV(id, content)` | Mutates content + lastModified + size |
+| `deleteVirtualCV(id)` | Removes from Map |
+| `listVirtualCVs()` | Returns all CVs sorted by lastModified desc |
+| `isVirtualId(id)` | Returns `true` if `id.startsWith("virtual_")` |
+
+### Editor Mode Detection (`/editor/[id]/page.tsx`)
+
+The editor infers its mode purely from the URL `id` parameter:
+
+```ts
+const mode: EditorMode = isVirtualId(rawId) ? "virtual" : "local";
+```
+
+| Mode | Load source | Autosave target | "no-workspace" state |
+|---|---|---|---|
+| `"local"` | `readMdFile(fileName)` via FS API | `writeMdFile(fileName, content)` | Shown if `getDirectoryHandle()` is null |
+| `"virtual"` | `getVirtualCV(rawId).content` | `updateVirtualCV(rawId, content)` | Shows "not-found" if ID missing (e.g. after page refresh) |
+
+Virtual autosave is synchronous (no I/O), but still debounced 500ms for UX consistency.
+Flush-on-back calls `updateVirtualCV` synchronously before `router.push("/")`.
+
+### Mode Indicators (UX)
+
+Both the Dashboard and Editor display a subtle pill badge indicating the active mode:
+
+| Mode | Badge colour | Text |
+|---|---|---|
+| Local File Mode | Emerald (with pulse animation) | `Local File Mode` |
+| Web Sandbox Mode | Amber | `Web Sandbox Mode` |
+
+The sandbox dashboard also shows a persistent amber info banner explaining session-only storage and directing users to "Download PDF" to save their work.
 
 ### File Identity
 
-Each CV is identified by its **filename slug** (the `.md` filename without extension).
+Each CV is identified by its **ID**:
+- **Local Mode**: filename slug (`.md` filename without extension), e.g. `software-eng-v1`
+- **Virtual Mode**: prefixed ID `virtual_<timestamp>_<random6>`, e.g. `virtual_1751234567890_a3f9b2`
 
 | Filename on disk       | URL slug           | Display Name          |
 |------------------------|--------------------|-----------------------|
@@ -40,10 +129,11 @@ Each CV is identified by its **filename slug** (the `.md` filename without exten
 
 URL routing: `/editor/software-eng-v1` → `params.id = "software-eng-v1"`.
 
-### Module-Level State (`src/lib/fs-access.ts`)
+### Module-Level State (`src/lib/fs-access.ts` + `src/lib/virtual-store.ts`)
 
-A single module-level variable `_dirHandle: FileSystemDirectoryHandle | null` holds the active directory connection.
-This persists across Next.js route changes within the same browser tab session (module state is never GC'd during client-side navigation).
+A single module-level variable `_dirHandle: FileSystemDirectoryHandle | null` holds the active directory connection (Local Mode).
+A module-level `Map<string, VirtualCV>` in `virtual-store.ts` holds in-memory CVs (Sandbox Mode).
+Both persist across Next.js route changes within the same browser tab session (module state is never GC'd during client-side navigation).
 
 Key exported functions:
 
@@ -81,56 +171,81 @@ interface MdFile {
 
 `id` param is `encodeURIComponent(slug)` when navigating, decoded with `decodeURIComponent(params.id)` in the editor.
 
-### Dashboard — Two Phases
+### Dashboard — Three Phases (V4)
 
-**Phase 1: `connect`** (no `_dirHandle`)
-- Full-screen dark landing with brand, explanation text, and a single "Select Local CV Folder" button.
-- Calls `pickDirectory()` on click; `AbortError` (user cancelled) is silently ignored; other errors shown inline.
-- Browser compatibility note: requires Chrome or Edge (File System Access API not available in Firefox/Safari).
+**Phase 1: `connect`** (FS supported, no `_dirHandle`)
+- Full-screen dark landing with brand, explanation text, and "Connect Local CV Folder" button.
+- Also shows "Continue in Web Sandbox Mode" secondary option for users who prefer not to pick a folder.
+- Calls `pickDirectory()` on click; `AbortError` silently ignored; other errors shown inline.
 
-**Phase 2: `explorer`** (handle is set)
-- Navbar with "New CV" button.
-- Connected folder name shown with emerald indicator.
-- "Refresh" button re-scans directory; "Disconnect" calls `clearDirectoryHandle()` and returns to Phase 1.
-- File grid (3-col desktop / 2 tablet / 1 mobile): shows display name, filename, last modified, file size, delete action.
-- **Create New CV modal**: prompts for a filename slug, sanitizes it, checks for duplicates via `fileExists()`, writes the file via `writeMdFile()`, navigates to `/editor/[slug]`.
-- **Delete**: inline "Delete from disk? / Confirm / Cancel" confirmation before `deleteMdFile()`.
+**Phase 2: `explorer`** (FS supported, handle is set)
+- Navbar with "New CV" button + emerald "Local File Mode" badge.
+- Connected folder name shown. Refresh / Disconnect controls.
+- File grid: shows display name, filename, last modified, file size, delete action.
+- **Create New CV modal**: 3-way template selector (Engineering / Product Manager / Blank), sanitizes slug, checks duplicates, writes `.md`, navigates to editor.
+- **Delete**: inline confirmation before `deleteMdFile()`.
+
+**Phase 3: `sandbox`** (FS not supported OR user opted in)
+- Navbar with "New CV" button + amber "Web Sandbox Mode" badge.
+- If FS is actually supported, shows "Connect Folder" escape hatch in navbar.
+- Amber info banner explaining session-only storage and PDF download.
+- Virtual CV grid: lists all in-memory CVs.
+- "Upload .md" button: reads file via FileReader, calls `createVirtualCV`, navigates to editor.
+- "Demo Templates" section: Software Engineer and Product Manager cards that open pre-populated editors instantly.
+- **Create New CV modal**: same 3-way template selector; creates `VirtualCV` in store, navigates to editor.
 
 ### Layout
 
 ```
-Connect Screen (/ — no workspace)
+Connect Screen (/ — FS supported, no workspace)
 ┌────────────────────────────────────────────────────────┐
 │                                                        │
-│           [folder icon]  Zenith CV  v3                 │
+│           [folder icon]  Zenith CV  v4                 │
 │                                                        │
 │    "Your CVs live as .md files on your computer"       │
 │                                                        │
-│          [ Select Local CV Folder ]                    │
+│          [ Connect Local CV Folder ]                   │
 │                                                        │
-│     Requires Chrome or Edge · File System Access API   │
+│    ──────── or continue without a folder ──────────    │
+│         [ Continue in Web Sandbox Mode ]               │
+│                                                        │
+│     Local Mode · Chrome / Edge · File System API       │
 └────────────────────────────────────────────────────────┘
 
-Explorer Dashboard (/ — workspace connected)
+Explorer Dashboard (/ — Local File Mode, connected)
 ┌────────────────────────────────────────────────────────┐
-│  NAVBAR  (Zenith CV v3 · + New CV)                     │  ← bg-neutral-950
+│  NAVBAR  (Zenith CV v4 · ● Local File Mode · + New CV) │
 ├────────────────────────────────────────────────────────┤
 │  "Your resumes" · 📁 folder-name · N files             │
 │  [Refresh]  [Disconnect]                               │
 │                                                        │
 │  ┌──────────┐  ┌──────────┐  ┌──────────┐             │
 │  │ File Card│  │ File Card│  │ File Card│  ← 3-col    │
-│  │ name     │  │ name     │  │ name     │             │
-│  │ slug.md  │  │ slug.md  │  │ slug.md  │             │
-│  │ modified │  │ modified │  │ modified │             │
-│  │ size     │  │ size     │  │ size     │             │
-│  │ [Delete] │  │ [Delete] │  │ [Delete] │             │
 │  └──────────┘  └──────────┘  └──────────┘             │
 └────────────────────────────────────────────────────────┘
 
-Editor (/editor/[slug])
+Sandbox Dashboard (/ — Web Sandbox Mode)
 ┌────────────────────────────────────────────────────────┐
-│  TOOLBAR  (← Dashboard · name · slug.md · saving · PDF)│  ← bg-neutral-950
+│  NAVBAR  (Zenith CV v4 · ● Web Sandbox Mode · + New CV)│
+│  [Connect Folder] (shown only if FS is supported)      │
+├────────────────────────────────────────────────────────┤
+│  ⚠ Amber banner: session memory only, use Download PDF │
+├────────────────────────────────────────────────────────┤
+│  "Your CVs" · N CVs in session memory · [Upload .md]   │
+│  ┌──────────┐  ┌──────────┐  ┌──────────┐             │
+│  │ VirtualCV│  │ VirtualCV│  │ VirtualCV│  ← 3-col    │
+│  └──────────┘  └──────────┘  └──────────┘             │
+│                                                        │
+│  Demo Templates                                        │
+│  ┌────────────────────┐  ┌────────────────────┐        │
+│  │ Demo: SWE          │  │ Demo: PM           │        │
+│  └────────────────────┘  └────────────────────┘        │
+└────────────────────────────────────────────────────────┘
+
+Editor (/editor/[id])
+┌────────────────────────────────────────────────────────┐
+│  TOOLBAR  (← Dashboard · name · slug.md · [mode badge] │
+│            · saving · Load .md · Download PDF)          │
 ├─────────────────────────┬──────────────────────────────┤
 │  EDITOR (left 50%)      │  PREVIEW (right 50%)         │
 │  <textarea> font-mono   │  <ReactMarkdown> .cv-content │
@@ -138,16 +253,20 @@ Editor (/editor/[slug])
 └─────────────────────────┴──────────────────────────────┘
 ```
 
-### Editor Features (V3)
+### Editor Features (V4)
 
-- **File loading**: On mount, checks `getDirectoryHandle()`. If null → `no-workspace` error state with link to dashboard. Reads file content via `readMdFile(fileName)`. `NotFoundError` → `not-found` state.
-- **Autosave**: Debounced 500ms. After debounce fires, calls `await writeMdFile(fileName, markdown)` (stream write to disk). Save states: `idle` → `saving` (yellow pulse) → `saved` (emerald, 2.5s) | `error` (red).
-- **Flush on back**: "Back to Dashboard" clears the debounce timer and calls `writeMdFile` immediately before `router.push("/")`.
-- **Load .md**: `<input type="file">` FileReader replaces editor content (content is then autosaved to disk).
+- **Mode detection**: `isVirtualId(params.id)` determines whether to use FS API or virtual store.
+- **File loading (Local)**: Checks `getDirectoryHandle()`. If null → `no-workspace` error state. Reads via `readMdFile(fileName)`.
+- **File loading (Virtual)**: `getVirtualCV(rawId)`. If null (page refreshed) → `not-found` state with explanation about session memory.
+- **Autosave (Local)**: Debounced 500ms → `writeMdFile(fileName, content)` stream write to disk.
+- **Autosave (Virtual)**: Debounced 500ms → `updateVirtualCV(rawId, content)` synchronous Map update.
+- **Flush on back**: "Back to Dashboard" clears debounce and calls save immediately before `router.push("/")`.
+- **Load .md**: `<input type="file">` FileReader replaces editor content (in Local Mode, triggers autosave to disk; in Virtual Mode, updates store).
 - **Download PDF**: `window.print()` — same print CSS as before.
-- **currentMarkdown ref**: A `useRef` tracks latest content for the flush-on-back case without stale closure issues.
+- **Mode badge**: Toolbar shows emerald "Local File Mode" or amber "Web Sandbox Mode" pill.
+- **currentMarkdown ref**: Tracks latest content for flush-on-back without stale closure issues.
 
-### Stream Write Architecture
+### Stream Write Architecture (Local Mode only)
 
 Every autosave uses the `FileSystemWritableFileStream` pattern:
 ```
@@ -165,7 +284,8 @@ This ensures no partial writes corrupt the file.
 | `DOMException: AbortError` | User cancelled `showDirectoryPicker` | Silently ignored |
 | `DOMException: NotFoundError` | File missing when editor opens | Shows `not-found` state |
 | `DOMException: NotAllowedError` | Permission revoked mid-session | `writeMdFile` rejects → `saveStatus = "error"` shown in toolbar |
-| Unsupported browser | No `showDirectoryPicker` in `window` | Error message shown before picker call |
+| Unsupported browser | No `showDirectoryPicker` in `window` | Automatically routes to Sandbox Mode |
+| Virtual CV not found | Page refreshed, Map cleared | Shows `not-found` state with session-memory explanation |
 | Duplicate filename on create | `fileExists()` returns true | Inline error in create modal |
 
 ## PDF Export
@@ -197,17 +317,19 @@ c:\Projects\zenith-cv\
     ├── AGENTS.md                     ← Next.js-specific agent notes
     └── src/
         ├── lib/
-        │   ├── fs-access.ts          ← File System Access API module (module-level state + all FS ops)
-        │   ├── storage.ts            ← (legacy) CvEntry type + localStorage CRUD — no longer used by main app
-        │   └── templates.ts          ← DEFAULT_TEMPLATE + BLANK_TEMPLATE strings
+        │   ├── use-fs-support.ts     ← isFsSupported() utility + useFsSupport() hook
+        │   ├── virtual-store.ts      ← In-memory VirtualCV Map for Sandbox Mode
+        │   ├── fs-access.ts          ← File System Access API module (Local Mode)
+        │   ├── storage.ts            ← (legacy) CvEntry type + localStorage CRUD — unused
+        │   └── templates.ts          ← DEFAULT_TEMPLATE + DEMO_TEMPLATE_PM + BLANK_TEMPLATE
         └── app/
             ├── layout.tsx            ← Root layout (Geist fonts, metadata, html/body)
-            ├── page.tsx              ← Dashboard: Connect Workspace OR File Explorer (CLIENT)
+            ├── page.tsx              ← Dashboard: connect / explorer (Local) / sandbox (Virtual)
             ├── globals.css           ← Tailwind 4 import + cv-* prose + print CSS
             ├── favicon.ico
             └── editor/
                 └── [id]/
-                    └── page.tsx      ← Split-screen editor; [id] = slug (filename without .md) (CLIENT)
+                    └── page.tsx      ← Hybrid editor: local disk OR virtual store by id prefix
 ```
 
 ---
@@ -218,17 +340,20 @@ c:\Projects\zenith-cv\
 
 ---
 
-## Working State (V3 — File System Edition)
+## Working State (V4 — Hybrid File Edition)
 
-All V2 features preserved (editor, PDF export, print CSS, ReactMarkdown rendering), plus:
+All V3 features preserved (local file storage, editor, PDF export, print CSS, ReactMarkdown rendering), plus:
 
-- **True local file storage**: CVs are real `.md` files on the user's disk — no localStorage, no cloud.
-- **Workspace Connect flow**: Clean landing screen with `showDirectoryPicker()` to select any local folder.
-- **File explorer**: Scans for `.md` files, shows filename + last modified + size. Reconnect / Disconnect / Refresh.
-- **File-based autosave**: Every keystroke debounce (500ms) streams content to disk via `FileSystemWritableFileStream`. Atomic write (no corruption risk).
-- **Create New CV**: Prompts for filename slug, sanitizes, checks duplicates, writes `.md` file, opens editor.
-- **Delete from disk**: Inline confirmation, then `dirHandle.removeEntry(fileName)`.
-- **Graceful degradation**: Editor detects missing workspace (page refresh) and shows reconnect prompt.
+- **Browser feature detection**: `isFsSupported()` in `src/lib/use-fs-support.ts` gates Local vs Sandbox mode.
+- **Web Sandbox Mode**: Full dashboard for Firefox/Safari/portfolio deployments — no FS API required.
+  - Virtual CVs stored in module-level Map, survive client-side navigation, lost on page refresh.
+  - Upload any `.md` file via standard `<input type="file">` — no picker required.
+  - Two pre-populated demo templates (Software Engineer, Product Manager) openable in one click.
+- **Hybrid editor**: Single `/editor/[id]` route handles both local files and virtual CVs via `isVirtualId(id)`.
+- **Mode indicators**: Emerald badge (Local File Mode) and amber badge (Web Sandbox Mode) in both dashboard and editor toolbar.
+- **Escape hatch**: Chrome/Edge users can voluntarily switch to Sandbox Mode from the Connect screen; sandbox users with FS support can connect a folder at any time.
+- **3-way template selector**: Create modal now offers Engineering, Product Manager, and Blank templates in both modes.
+- **DEMO_TEMPLATE_PM**: New Product Manager resume template in `src/lib/templates.ts`.
 
 ---
 
