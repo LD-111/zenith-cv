@@ -25,6 +25,7 @@ import {
 type SaveStatus = "idle" | "saving" | "saved" | "error";
 type LoadState = "loading" | "ready" | "no-workspace" | "not-found" | "error";
 type EditorMode = "local" | "virtual";
+type ExportStatus = "idle" | "exporting";
 
 export default function EditorPage() {
   const params = useParams<{ id: string }>();
@@ -43,6 +44,7 @@ export default function EditorPage() {
   const [markdown, setMarkdown] = useState<string>("");
   const [saveStatus, setSaveStatus] = useState<SaveStatus>("idle");
   const [loadError, setLoadError] = useState<string | null>(null);
+  const [exportStatus, setExportStatus] = useState<ExportStatus>("idle");
 
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const savedTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -143,9 +145,18 @@ export default function EditorPage() {
     router.push("/");
   }, [router, fileName, mode, rawId]);
 
-  const handlePrint = useCallback(() => {
-    window.print();
-  }, []);
+  const handleDownloadPDF = useCallback(async () => {
+    if (exportStatus === "exporting") return;
+    setExportStatus("exporting");
+    try {
+      const { downloadCVAsPDF } = await import("@/lib/pdf-export");
+      await downloadCVAsPDF(currentMarkdown.current, fileName);
+    } catch (err) {
+      console.error("PDF export failed:", err);
+    } finally {
+      setExportStatus("idle");
+    }
+  }, [exportStatus, fileName]);
 
   const handleUpload = useCallback(
     (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -327,15 +338,25 @@ export default function EditorPage() {
           />
 
           <button
-            onClick={handlePrint}
-            className="flex items-center gap-1.5 px-4 py-1.5 text-sm font-semibold text-white bg-indigo-600 hover:bg-indigo-500 active:bg-indigo-800 rounded-md transition-colors"
+            onClick={handleDownloadPDF}
+            disabled={exportStatus === "exporting"}
+            className="flex items-center gap-1.5 px-4 py-1.5 text-sm font-semibold text-white bg-indigo-600 hover:bg-indigo-500 active:bg-indigo-800 disabled:opacity-60 disabled:cursor-not-allowed rounded-md transition-colors"
           >
-            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <polyline points="6 9 6 2 18 2 18 9" />
-              <path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2" />
-              <rect x="6" y="14" width="12" height="8" />
-            </svg>
-            Download PDF
+            {exportStatus === "exporting" ? (
+              <>
+                <span className="inline-block w-3 h-3 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                Generating…
+              </>
+            ) : (
+              <>
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                  <polyline points="7 10 12 15 17 10" />
+                  <line x1="12" y1="15" x2="12" y2="3" />
+                </svg>
+                Download PDF
+              </>
+            )}
           </button>
         </div>
       </header>

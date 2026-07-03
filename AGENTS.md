@@ -262,7 +262,7 @@ Editor (/editor/[id])
 - **Autosave (Virtual)**: Debounced 500ms → `updateVirtualCV(rawId, content)` synchronous Map update.
 - **Flush on back**: "Back to Dashboard" clears debounce and calls save immediately before `router.push("/")`.
 - **Load .md**: `<input type="file">` FileReader replaces editor content (in Local Mode, triggers autosave to disk; in Virtual Mode, updates store).
-- **Download PDF**: `window.print()` — same print CSS as before.
+- **Download PDF**: Dynamically imports `src/lib/pdf-export.tsx`, parses the markdown AST, and generates a real text-based PDF via `@react-pdf/renderer`. Shows a spinner in the toolbar button while generating; triggers a browser file download on completion.
 - **Mode badge**: Toolbar shows emerald "Local File Mode" or amber "Web Sandbox Mode" pill.
 - **currentMarkdown ref**: Tracks latest content for flush-on-back without stale closure issues.
 
@@ -290,9 +290,14 @@ This ensures no partial writes corrupt the file.
 
 ## PDF Export
 
-- Same as V1/V2: `window.print()` triggers browser print dialog.
-- `@media print` in `globals.css` hides toolbar/editor; preview fills the A4 page.
-- `@page { size: A4 portrait; margin: 14mm 16mm; }`.
+- **`src/lib/pdf-export.tsx`** — client-side, text-based PDF generation via `@react-pdf/renderer@4`.
+- The markdown string is parsed with `unified` + `remark-parse` + `remark-gfm` into an mdast AST, then each AST node is converted to `@react-pdf/renderer` primitives (`<Document>`, `<Page>`, `<Text>`, `<View>`, `<Link>`).
+- Output is a real PDF with selectable, indexable text — ATS-compatible, no print dialog.
+- Multi-page flow is handled automatically by `@react-pdf/renderer`'s layout engine; content never cuts off at page boundaries.
+- The editor's "Download PDF" button dynamically imports `pdf-export.tsx` (keeping `@react-pdf/renderer` out of the initial bundle), shows a spinner during generation, and then triggers a browser file download.
+- Font mapping: `Times-Roman` / `Times-Bold` / `Times-Italic` (PDF built-ins) match the Georgia/Times New Roman used in the on-screen preview; `Courier` for inline/block code.
+- Styles mirror `globals.css` `.cv-*` values: same font sizes, colours, margins, and border rules (H2 indigo border-bottom, HR, blockquote, table).
+- The legacy `@media print` CSS in `globals.css` is retained for Ctrl+P browser printing but is no longer the primary export path.
 
 ## Markdown Rendering
 
