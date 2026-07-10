@@ -14,12 +14,17 @@ import {
   getDirectoryHandle,
   readMdFile,
   writeMdFile,
+  renameMdFile,
+  fileExists,
+  sanitizeSlug,
   slugToDisplayName,
 } from "@/lib/fs-access";
 import {
   isVirtualId,
   getVirtualCV,
   updateVirtualCV,
+  updateVirtualCVName,
+  listVirtualCVs,
 } from "@/lib/virtual-store";
 
 type SaveStatus = "idle" | "saving" | "saved" | "error";
@@ -34,11 +39,20 @@ export default function EditorPage() {
   const rawId = decodeURIComponent(params.id);
   const mode: EditorMode = isVirtualId(rawId) ? "virtual" : "local";
 
-  const slug = mode === "local" ? rawId : rawId;
-  const fileName = mode === "local" ? slug + ".md" : (getVirtualCV(rawId)?.fileName ?? rawId + ".md");
-  const displayName = mode === "virtual"
-    ? slugToDisplayName(getVirtualCV(rawId)?.name ?? rawId)
-    : slugToDisplayName(slug);
+  // Initial filename derived from URL param — used only for the initial file load
+  const initialFileName = mode === "local"
+    ? rawId + ".md"
+    : (getVirtualCV(rawId)?.fileName ?? rawId + ".md");
+
+  // Stateful active name — updated immediately when the user renames
+  const [activeSlug, setActiveSlug] = useState(rawId);
+  const [activeVirtualName, setActiveVirtualName] = useState(
+    mode === "virtual" ? (getVirtualCV(rawId)?.name ?? "") : ""
+  );
+  const activeFileName = mode === "local" ? activeSlug + ".md" : activeVirtualName + ".md";
+  const activeDisplayName = mode === "virtual"
+    ? slugToDisplayName(activeVirtualName)
+    : slugToDisplayName(activeSlug);
 
   const [loadState, setLoadState] = useState<LoadState>("loading");
   const [markdown, setMarkdown] = useState<string>("");
@@ -46,10 +60,17 @@ export default function EditorPage() {
   const [loadError, setLoadError] = useState<string | null>(null);
   const [exportStatus, setExportStatus] = useState<ExportStatus>("idle");
 
+  const [renameMode, setRenameMode] = useState(false);
+  const [renameValue, setRenameValue] = useState("");
+  const [renameError, setRenameError] = useState<string | null>(null);
+
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const savedTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const isFirstRender = useRef(true);
   const currentMarkdown = useRef<string>("");
+  // Tracks the active filename for autosave — updated by effect when activeFileName changes
+  const activeFileNameRef = useRef(initialFileName);
+  useEffect(() => { activeFileNameRef.current = activeFileName; }, [activeFileName]);
 
   useEffect(() => {
     if (mode === "virtual") {
@@ -72,7 +93,7 @@ export default function EditorPage() {
       return;
     }
 
-    readMdFile(fileName)
+    readMdFile(initialFileName)
       .then((content) => {
         currentMarkdown.current = content;
         startTransition(() => {
@@ -94,7 +115,7 @@ export default function EditorPage() {
           });
         }
       });
-  }, [rawId, fileName, mode]);
+  }, [rawId, initialFileName, mode]);
 
   useEffect(() => {
     if (loadState !== "ready") return;
@@ -113,7 +134,7 @@ export default function EditorPage() {
         if (mode === "virtual") {
           updateVirtualCV(rawId, markdown);
         } else {
-          await writeMdFile(fileName, markdown);
+          await writeMdFile(activeFileNameRef.current, markdown);
         }
         setSaveStatus("saved");
         savedTimerRef.current = setTimeout(() => setSaveStatus("idle"), 2500);
@@ -126,7 +147,7 @@ export default function EditorPage() {
     return () => {
       if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
     };
-  }, [markdown, loadState, fileName, mode, rawId]);
+  }, [markdown, loadState, mode, rawId]);
 
   const handleBackToDashboard = useCallback(async () => {
     if (saveTimerRef.current) {
@@ -136,27 +157,27 @@ export default function EditorPage() {
         if (mode === "virtual") {
           updateVirtualCV(rawId, currentMarkdown.current);
         } else {
-          await writeMdFile(fileName, currentMarkdown.current);
+          await writeMdFile(activeFileNameRef.current, currentMarkdown.current);
         }
       } catch {
         // best-effort flush
       }
     }
     router.push("/");
-  }, [router, fileName, mode, rawId]);
+  }, [router, mode, rawId]);
 
   const handleDownloadPDF = useCallback(async () => {
     if (exportStatus === "exporting") return;
     setExportStatus("exporting");
     try {
       const { downloadCVAsPDF } = await import("@/lib/pdf-export");
-      await downloadCVAsPDF(currentMarkdown.current, fileName);
+      await downloadCVAsPDF(currentMarkdown.current, activeFileNameRef.current);
     } catch (err) {
       console.error("PDF export failed:", err);
     } finally {
       setExportStatus("idle");
     }
-  }, [exportStatus, fileName]);
+  }, [exportStatus]);
 
   const handleUpload = useCallback(
     (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -173,6 +194,43 @@ export default function EditorPage() {
     },
     []
   );
+
+  const handleRename = useCallback(async () => {
+    const newSlug = sanitizeSlug(renameValue);
+    if (!newSlug) {
+      setRenameError("Please enter a valid name.");
+      return;
+    }
+    setRenameError(null);
+    try {
+      if (mode === "virtual") {
+        const duplicate = listVirtualCVs().find(cv => cv.name === newSlug && cv.id !== rawId);
+        if (duplicate) {
+          setRenameError(`A CV named "${newSlug}" already exists.`);
+          return;
+        }
+        updateVirtualCVName(rawId, newSlug);
+        setActiveVirtualName(newSlug);
+      } else {
+        const newFileName = newSlug + ".md";
+        if (newFileName !== activeFileNameRef.current) {
+          const exists = await fileExists(newFileName);
+          if (exists) {
+            setRenameError(`"${newFileName}" already exists in this folder.`);
+            return;
+          }
+        }
+        await renameMdFile(activeFileNameRef.current, newFileName);
+        setActiveSlug(newSlug);
+        window.history.replaceState(null, "", "/editor/" + encodeURIComponent(newSlug));
+      }
+      setRenameMode(false);
+      setRenameValue("");
+    } catch (err) {
+      console.error("Failed to rename:", err);
+      setRenameError(err instanceof Error ? err.message : "Failed to rename.");
+    }
+  }, [renameValue, mode, rawId]);
 
   if (loadState === "loading") {
     return (
@@ -211,7 +269,7 @@ export default function EditorPage() {
     return (
       <div className="flex flex-col h-screen items-center justify-center bg-neutral-950 text-neutral-400 gap-4">
         <p className="font-mono text-sm">
-          <code className="text-indigo-400">{fileName}</code> not found.
+          <code className="text-indigo-400">{initialFileName}</code> not found.
         </p>
         {mode === "virtual" && (
           <p className="text-xs text-neutral-600 max-w-xs text-center px-4">
@@ -267,12 +325,58 @@ export default function EditorPage() {
                 <polyline points="14 2 14 8 20 8" />
               </svg>
             </div>
-            <span className="text-sm font-semibold text-white tracking-tight max-w-[200px] truncate">
-              {displayName}
-            </span>
-            <span className="text-xs font-mono text-neutral-600 hidden sm:inline">
-              {fileName}
-            </span>
+            {renameMode ? (
+              <div className="flex items-center gap-1">
+                <input
+                  type="text"
+                  value={renameValue}
+                  onChange={(e) => setRenameValue(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") handleRename();
+                    if (e.key === "Escape") setRenameMode(false);
+                  }}
+                  autoFocus
+                  placeholder="New name"
+                  className="px-2 py-1 text-sm bg-neutral-800 border border-neutral-600 focus:border-indigo-500 focus:outline-none rounded text-white placeholder-neutral-600 font-mono"
+                />
+                <button
+                  onClick={handleRename}
+                  className="px-2 py-1 text-xs font-medium text-white bg-indigo-600 hover:bg-indigo-500 rounded transition-colors"
+                >
+                  Save
+                </button>
+                <button
+                  onClick={() => {
+                    setRenameMode(false);
+                    setRenameValue("");
+                    setRenameError(null);
+                  }}
+                  className="px-2 py-1 text-xs text-neutral-500 hover:text-white transition-colors"
+                >
+                  Cancel
+                </button>
+              </div>
+            ) : (
+              <>
+                <span className="text-sm font-semibold text-white tracking-tight max-w-[200px] truncate">
+                  {activeDisplayName}
+                </span>
+                <span className="text-xs font-mono text-neutral-600 hidden sm:inline">
+                  {activeFileName}
+                </span>
+                <button
+                  onClick={() => {
+                    setRenameMode(true);
+                    setRenameValue(mode === "virtual" ? activeVirtualName : activeSlug);
+                    setRenameError(null);
+                  }}
+                  className="text-xs text-neutral-600 hover:text-cyan-400 transition-colors ml-2"
+                  title="Rename"
+                >
+                  ✎
+                </button>
+              </>
+            )}
           </div>
 
           <span className="text-neutral-700 select-none hidden sm:inline">|</span>
@@ -292,13 +396,16 @@ export default function EditorPage() {
 
         <div className="flex items-center gap-2">
           <div className="flex items-center gap-1.5 min-w-[80px] justify-end">
-            {saveStatus === "saving" && (
+            {renameError && (
+              <span className="text-xs text-red-400 font-mono">{renameError}</span>
+            )}
+            {!renameError && saveStatus === "saving" && (
               <span className="flex items-center gap-1.5 text-xs text-neutral-500 font-mono">
                 <span className="inline-block w-1.5 h-1.5 rounded-full bg-yellow-500 animate-pulse" />
                 saving
               </span>
             )}
-            {saveStatus === "saved" && (
+            {!renameError && saveStatus === "saved" && (
               <span className="flex items-center gap-1.5 text-xs text-emerald-500 font-mono">
                 <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
                   <polyline points="20 6 9 17 4 12" />
@@ -306,7 +413,7 @@ export default function EditorPage() {
                 saved
               </span>
             )}
-            {saveStatus === "error" && (
+            {!renameError && saveStatus === "error" && (
               <span className="flex items-center gap-1.5 text-xs text-red-400 font-mono">
                 <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
                   <circle cx="12" cy="12" r="10" />
@@ -369,7 +476,7 @@ export default function EditorPage() {
               <span className="w-3 h-3 rounded-full bg-yellow-400" />
               <span className="w-3 h-3 rounded-full bg-green-400" />
             </div>
-            <span className="text-xs text-neutral-400 font-mono ml-1">{fileName}</span>
+            <span className="text-xs text-neutral-400 font-mono ml-1">{activeFileName}</span>
           </div>
           <textarea
             value={markdown}

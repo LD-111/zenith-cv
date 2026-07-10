@@ -16,6 +16,7 @@ import {
   scanMdFiles,
   writeMdFile,
   deleteMdFile,
+  renameMdFile,
   fileExists,
   sanitizeSlug,
   slugToDisplayName,
@@ -28,6 +29,7 @@ import {
   createVirtualCV,
   deleteVirtualCV,
   listVirtualCVs,
+  updateVirtualCVName,
   type VirtualCV,
 } from "@/lib/virtual-store";
 import {
@@ -58,6 +60,10 @@ export default function Dashboard() {
   const [nameError, setNameError] = useState<string | null>(null);
   const [templateChoice, setTemplateChoice] = useState<TemplateChoice>("engineering");
   const [creating, setCreating] = useState(false);
+
+  const [renameTarget, setRenameTarget] = useState<string | null>(null);
+  const [renameValue, setRenameValue] = useState("");
+  const [renameError, setRenameError] = useState<string | null>(null);
 
   const uploadRef = useRef<HTMLInputElement>(null);
   const createInputRef = useRef<HTMLInputElement>(null);
@@ -172,6 +178,50 @@ export default function Dashboard() {
     },
     [refreshVirtualFiles]
   );
+
+  const handleRenameLocal = useCallback(async () => {
+    if (!renameTarget) return;
+    const newSlug = sanitizeSlug(renameValue);
+    if (!newSlug) {
+      setRenameError("Please enter a valid filename.");
+      return;
+    }
+    const newFileName = newSlug + ".md";
+    setRenameError(null);
+    try {
+      const exists = await fileExists(newFileName);
+      if (exists && newFileName !== renameTarget) {
+        setRenameError(`"${newFileName}" already exists in this folder.`);
+        return;
+      }
+      await renameMdFile(renameTarget, newFileName);
+      setRenameTarget(null);
+      setRenameValue("");
+      startTransition(() => refreshFiles());
+    } catch (err) {
+      console.error("Failed to rename file:", err);
+      setRenameError(err instanceof Error ? err.message : "Failed to rename file.");
+    }
+  }, [renameTarget, renameValue, refreshFiles]);
+
+  const handleRenameVirtual = useCallback(() => {
+    if (!renameTarget) return;
+    const newSlug = sanitizeSlug(renameValue);
+    if (!newSlug) {
+      setRenameError("Please enter a valid name.");
+      return;
+    }
+    setRenameError(null);
+    try {
+      updateVirtualCVName(renameTarget, newSlug);
+      setRenameTarget(null);
+      setRenameValue("");
+      startTransition(() => refreshVirtualFiles());
+    } catch (err) {
+      console.error("Failed to rename CV:", err);
+      setRenameError(err instanceof Error ? err.message : "Failed to rename CV.");
+    }
+  }, [renameTarget, renameValue, refreshVirtualFiles]);
 
   const templateContent = useCallback(
     (choice: TemplateChoice): string => {
@@ -449,12 +499,27 @@ export default function Dashboard() {
                     key={cv.id}
                     cv={cv}
                     confirmingDelete={deleteConfirm === cv.id}
+                    isRenaming={renameTarget === cv.id}
+                    renameValue={renameTarget === cv.id ? renameValue : ""}
+                    renameError={renameTarget === cv.id ? renameError : null}
                     onOpen={() => handleOpenVirtual(cv.id)}
                     onDeleteRequest={() =>
                       setDeleteConfirm(deleteConfirm === cv.id ? null : cv.id)
                     }
                     onDeleteConfirm={() => handleDeleteVirtual(cv.id)}
                     onDeleteCancel={() => setDeleteConfirm(null)}
+                    onRenameStart={() => {
+                      setRenameTarget(cv.id);
+                      setRenameValue(cv.name);
+                      setRenameError(null);
+                    }}
+                    onRenameChange={setRenameValue}
+                    onRenameConfirm={handleRenameVirtual}
+                    onRenameCancel={() => {
+                      setRenameTarget(null);
+                      setRenameValue("");
+                      setRenameError(null);
+                    }}
                   />
                 ))}
               </div>
@@ -661,12 +726,27 @@ export default function Dashboard() {
                 key={file.fileName}
                 file={file}
                 confirmingDelete={deleteConfirm === file.fileName}
+                isRenaming={renameTarget === file.fileName}
+                renameValue={renameTarget === file.fileName ? renameValue : ""}
+                renameError={renameTarget === file.fileName ? renameError : null}
                 onOpen={() => handleOpenFile(file.slug)}
                 onDeleteRequest={() =>
                   setDeleteConfirm(deleteConfirm === file.fileName ? null : file.fileName)
                 }
                 onDeleteConfirm={() => handleDeleteLocal(file.fileName)}
                 onDeleteCancel={() => setDeleteConfirm(null)}
+                onRenameStart={() => {
+                  setRenameTarget(file.fileName);
+                  setRenameValue(file.slug);
+                  setRenameError(null);
+                }}
+                onRenameChange={setRenameValue}
+                onRenameConfirm={handleRenameLocal}
+                onRenameCancel={() => {
+                  setRenameTarget(null);
+                  setRenameValue("");
+                  setRenameError(null);
+                }}
               />
             ))}
           </div>
@@ -869,23 +949,46 @@ function DemoTemplateRow({ onLoad }: DemoTemplateRowProps) {
 interface FileCardProps {
   file: MdFile;
   confirmingDelete: boolean;
+  isRenaming: boolean;
+  renameValue: string;
+  renameError: string | null;
   onOpen: () => void;
   onDeleteRequest: () => void;
   onDeleteConfirm: () => void;
   onDeleteCancel: () => void;
+  onRenameStart: () => void;
+  onRenameChange: (value: string) => void;
+  onRenameConfirm: () => void;
+  onRenameCancel: () => void;
 }
 
 function FileCard({
   file,
   confirmingDelete,
+  isRenaming,
+  renameValue,
+  renameError,
   onOpen,
   onDeleteRequest,
   onDeleteConfirm,
   onDeleteCancel,
+  onRenameStart,
+  onRenameChange,
+  onRenameConfirm,
+  onRenameCancel,
 }: FileCardProps) {
+  const renameInputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (isRenaming) {
+      setTimeout(() => renameInputRef.current?.focus(), 50);
+      renameInputRef.current?.select();
+    }
+  }, [isRenaming]);
+
   return (
     <div className="group relative flex flex-col gap-3 p-4 rounded-xl border border-neutral-800 hover:border-neutral-700 bg-neutral-900/40 hover:bg-neutral-900/80 transition-all">
-      <button onClick={onOpen} className="text-left flex-1">
+      <button onClick={onOpen} className="text-left flex-1" disabled={isRenaming || confirmingDelete}>
         <div className="flex items-start justify-between gap-2">
           <div className="flex items-center gap-2 min-w-0">
             <div className="shrink-0 flex items-center justify-center w-7 h-7 rounded-md bg-indigo-950/60 border border-indigo-900/40">
@@ -907,7 +1010,34 @@ function FileCard({
         </div>
       </button>
 
-      {confirmingDelete ? (
+      {isRenaming ? (
+        <div className="flex flex-col gap-2 pt-2 border-t border-neutral-800">
+          <div className="flex gap-0">
+            <input
+              ref={renameInputRef}
+              type="text"
+              value={renameValue}
+              onChange={(e) => onRenameChange(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") onRenameConfirm();
+                if (e.key === "Escape") onRenameCancel();
+              }}
+              placeholder="e.g. new-filename"
+              className="flex-1 px-2 py-1 text-xs bg-neutral-800 border border-neutral-600 border-r-0 focus:border-indigo-500 focus:outline-none rounded-l text-white placeholder-neutral-600 transition-colors font-mono"
+            />
+            <span className="px-2 py-1 text-xs bg-neutral-700 border border-neutral-600 rounded-r text-neutral-500 font-mono select-none">.md</span>
+          </div>
+          {renameError && <p className="text-xs text-red-400">{renameError}</p>}
+          <div className="flex items-center gap-2 pt-1">
+            <button onClick={onRenameConfirm} className="px-2.5 py-1 text-xs font-medium text-white bg-indigo-600 hover:bg-indigo-500 rounded transition-colors">
+              Rename
+            </button>
+            <button onClick={onRenameCancel} className="px-2.5 py-1 text-xs text-neutral-500 hover:text-white transition-colors">
+              Cancel
+            </button>
+          </div>
+        </div>
+      ) : confirmingDelete ? (
         <div className="flex items-center gap-2 pt-2 border-t border-neutral-800">
           <span className="text-xs text-red-400 flex-1">Delete from disk?</span>
           <button onClick={onDeleteConfirm} className="px-2.5 py-1 text-xs font-medium text-white bg-red-700 hover:bg-red-600 rounded transition-colors">Confirm</button>
@@ -921,12 +1051,20 @@ function FileCard({
           >
             Open →
           </button>
-          <button
-            onClick={onDeleteRequest}
-            className="text-xs text-neutral-700 hover:text-red-400 transition-colors"
-          >
-            Delete
-          </button>
+          <div className="flex items-center gap-3">
+            <button
+              onClick={onRenameStart}
+              className="text-xs text-neutral-700 hover:text-cyan-400 transition-colors"
+            >
+              Rename
+            </button>
+            <button
+              onClick={onDeleteRequest}
+              className="text-xs text-neutral-700 hover:text-red-400 transition-colors"
+            >
+              Delete
+            </button>
+          </div>
         </div>
       )}
     </div>
@@ -936,23 +1074,46 @@ function FileCard({
 interface VirtualFileCardProps {
   cv: VirtualCV;
   confirmingDelete: boolean;
+  isRenaming: boolean;
+  renameValue: string;
+  renameError: string | null;
   onOpen: () => void;
   onDeleteRequest: () => void;
   onDeleteConfirm: () => void;
   onDeleteCancel: () => void;
+  onRenameStart: () => void;
+  onRenameChange: (value: string) => void;
+  onRenameConfirm: () => void;
+  onRenameCancel: () => void;
 }
 
 function VirtualFileCard({
   cv,
   confirmingDelete,
+  isRenaming,
+  renameValue,
+  renameError,
   onOpen,
   onDeleteRequest,
   onDeleteConfirm,
   onDeleteCancel,
+  onRenameStart,
+  onRenameChange,
+  onRenameConfirm,
+  onRenameCancel,
 }: VirtualFileCardProps) {
+  const renameInputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (isRenaming) {
+      setTimeout(() => renameInputRef.current?.focus(), 50);
+      renameInputRef.current?.select();
+    }
+  }, [isRenaming]);
+
   return (
     <div className="group relative flex flex-col gap-3 p-4 rounded-xl border border-neutral-800 hover:border-neutral-700 bg-neutral-900/40 hover:bg-neutral-900/80 transition-all">
-      <button onClick={onOpen} className="text-left flex-1">
+      <button onClick={onOpen} className="text-left flex-1" disabled={isRenaming || confirmingDelete}>
         <div className="flex items-start justify-between gap-2">
           <div className="flex items-center gap-2 min-w-0">
             <div className="shrink-0 flex items-center justify-center w-7 h-7 rounded-md bg-amber-950/40 border border-amber-900/30">
@@ -976,7 +1137,34 @@ function VirtualFileCard({
         </div>
       </button>
 
-      {confirmingDelete ? (
+      {isRenaming ? (
+        <div className="flex flex-col gap-2 pt-2 border-t border-neutral-800">
+          <div className="flex gap-0">
+            <input
+              ref={renameInputRef}
+              type="text"
+              value={renameValue}
+              onChange={(e) => onRenameChange(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") onRenameConfirm();
+                if (e.key === "Escape") onRenameCancel();
+              }}
+              placeholder="e.g. my-resume"
+              className="flex-1 px-2 py-1 text-xs bg-neutral-800 border border-neutral-600 border-r-0 focus:border-indigo-500 focus:outline-none rounded-l text-white placeholder-neutral-600 transition-colors font-mono"
+            />
+            <span className="px-2 py-1 text-xs bg-neutral-700 border border-neutral-600 rounded-r text-neutral-500 font-mono select-none">.md</span>
+          </div>
+          {renameError && <p className="text-xs text-red-400">{renameError}</p>}
+          <div className="flex items-center gap-2 pt-1">
+            <button onClick={onRenameConfirm} className="px-2.5 py-1 text-xs font-medium text-white bg-indigo-600 hover:bg-indigo-500 rounded transition-colors">
+              Rename
+            </button>
+            <button onClick={onRenameCancel} className="px-2.5 py-1 text-xs text-neutral-500 hover:text-white transition-colors">
+              Cancel
+            </button>
+          </div>
+        </div>
+      ) : confirmingDelete ? (
         <div className="flex items-center gap-2 pt-2 border-t border-neutral-800">
           <span className="text-xs text-red-400 flex-1">Remove from session?</span>
           <button onClick={onDeleteConfirm} className="px-2.5 py-1 text-xs font-medium text-white bg-red-700 hover:bg-red-600 rounded transition-colors">Confirm</button>
@@ -987,9 +1175,17 @@ function VirtualFileCard({
           <button onClick={onOpen} className="text-xs font-medium text-indigo-400 hover:text-indigo-300 transition-colors">
             Open →
           </button>
-          <button onClick={onDeleteRequest} className="text-xs text-neutral-700 hover:text-red-400 transition-colors">
-            Remove
-          </button>
+          <div className="flex items-center gap-3">
+            <button
+              onClick={onRenameStart}
+              className="text-xs text-neutral-700 hover:text-cyan-400 transition-colors"
+            >
+              Rename
+            </button>
+            <button onClick={onDeleteRequest} className="text-xs text-neutral-700 hover:text-red-400 transition-colors">
+              Remove
+            </button>
+          </div>
         </div>
       )}
     </div>

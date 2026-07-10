@@ -86,6 +86,21 @@ export async function deleteMdFile(fileName: string): Promise<void> {
   await _dirHandle.removeEntry(fileName);
 }
 
+export async function renameMdFile(
+  oldFileName: string,
+  newFileName: string
+): Promise<void> {
+  if (!_dirHandle) throw new Error("No directory connected");
+  const fileHandle = await _dirHandle.getFileHandle(oldFileName);
+  const file = await fileHandle.getFile();
+  const content = await file.text();
+  await _dirHandle.removeEntry(oldFileName);
+  const newFileHandle = await _dirHandle.getFileHandle(newFileName, { create: true });
+  const writable = await newFileHandle.createWritable();
+  await writable.write(content);
+  await writable.close();
+}
+
 export async function fileExists(fileName: string): Promise<boolean> {
   if (!_dirHandle) return false;
   try {

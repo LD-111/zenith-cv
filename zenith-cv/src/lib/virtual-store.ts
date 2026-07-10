@@ -47,6 +47,17 @@ export function updateVirtualCV(id: string, content: string): void {
   });
 }
 
+export function updateVirtualCVName(id: string, newName: string): void {
+  const cv = _store.get(id);
+  if (!cv) throw new Error(`Virtual CV "${id}" not found.`);
+  _store.set(id, {
+    ...cv,
+    name: newName,
+    fileName: newName + ".md",
+    lastModified: Date.now(),
+  });
+}
+
 export function deleteVirtualCV(id: string): void {
   _store.delete(id);
 }
