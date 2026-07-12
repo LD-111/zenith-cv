@@ -36,6 +36,11 @@ export default function EditorPage() {
   const params = useParams<{ id: string }>();
   const router = useRouter();
 
+  function getDashboardUrl(): string {
+    if (typeof window === 'undefined') return '/';
+    return window.location.pathname.startsWith('/zenith-cv') ? '/zenith-cv' : '/';
+  }
+
   const rawId = decodeURIComponent(params.id);
   const mode: EditorMode = isVirtualId(rawId) ? "virtual" : "local";
 
@@ -163,7 +168,7 @@ export default function EditorPage() {
         // best-effort flush
       }
     }
-    router.push("/");
+    router.push(getDashboardUrl());
   }, [router, mode, rawId]);
 
   const handleDownloadPDF = useCallback(async () => {
@@ -222,7 +227,8 @@ export default function EditorPage() {
         }
         await renameMdFile(activeFileNameRef.current, newFileName);
         setActiveSlug(newSlug);
-        window.history.replaceState(null, "", "/editor/" + encodeURIComponent(newSlug));
+        const pathPrefix = window.location.pathname.startsWith('/zenith-cv') ? '/zenith-cv' : '';
+        window.history.replaceState(null, "", pathPrefix + "/editor/" + encodeURIComponent(newSlug));
       }
       setRenameMode(false);
       setRenameValue("");
@@ -256,7 +262,7 @@ export default function EditorPage() {
           The editor requires a connected local folder. Please go back to the dashboard and select your CV folder.
         </p>
         <button
-          onClick={() => router.push("/")}
+          onClick={() => router.push(getDashboardUrl())}
           className="mt-2 text-indigo-400 hover:text-indigo-300 text-sm underline underline-offset-4 transition-colors"
         >
           Connect workspace →
@@ -277,7 +283,7 @@ export default function EditorPage() {
           </p>
         )}
         <button
-          onClick={() => router.push("/")}
+          onClick={() => router.push(getDashboardUrl())}
           className="text-indigo-400 hover:text-indigo-300 text-sm underline underline-offset-4 transition-colors"
         >
           Back to Dashboard
@@ -292,7 +298,7 @@ export default function EditorPage() {
         <p className="font-mono text-sm text-red-400">Failed to open file</p>
         <p className="text-xs text-neutral-600 max-w-xs">{loadError}</p>
         <button
-          onClick={() => router.push("/")}
+          onClick={() => router.push(getDashboardUrl())}
           className="text-indigo-400 hover:text-indigo-300 text-sm underline underline-offset-4 transition-colors"
         >
           Back to Dashboard
