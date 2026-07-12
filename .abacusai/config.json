@@ -9,7 +9,8 @@
       "Bash(node *)",
       "Bash(npx tsc *)",
       "Bash(dir *)",
-      "Bash(npx next lint *)"
+      "Bash(npx next lint *)",
+      "Bash(npx next build *)"
     ]
   },
   "additionalDirectories": [
