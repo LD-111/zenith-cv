@@ -7,7 +7,12 @@
       "Bash(mkdir *)",
       "Bash(npm install @react-pdf/renderer *)",
       "Bash(node *)",
-      "Bash(npx tsc *)"
+      "Bash(npx tsc *)",
+      "Bash(dir *)",
+      "Bash(npx next lint *)"
     ]
-  }
+  },
+  "additionalDirectories": [
+    "c:\\Projects\\my-portfolio"
+  ]
 }
