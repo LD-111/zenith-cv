@@ -7,7 +7,7 @@ import {
   useRef,
   startTransition,
 } from "react";
-import { useParams } from "next/navigation";
+import { useParams, useRouter } from "next/navigation";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import {
@@ -34,11 +34,7 @@ type ExportStatus = "idle" | "exporting";
 
 export default function EditorPage() {
   const params = useParams<{ id: string }>();
-
-  function getDashboardUrl(): string {
-    if (typeof window === 'undefined') return '/';
-    return window.location.pathname.startsWith('/zenith-cv') ? '/zenith-cv' : '/';
-  }
+  const router = useRouter();
 
   const rawId = decodeURIComponent(params.id);
   const mode: EditorMode = isVirtualId(rawId) ? "virtual" : "local";
@@ -167,8 +163,8 @@ export default function EditorPage() {
         // best-effort flush
       }
     }
-    window.location.assign(getDashboardUrl());
-  }, [mode, rawId]);
+    router.push('/');
+  }, [mode, rawId, router]);
 
   const handleDownloadPDF = useCallback(async () => {
     if (exportStatus === "exporting") return;
@@ -261,7 +257,7 @@ export default function EditorPage() {
           The editor requires a connected local folder. Please go back to the dashboard and select your CV folder.
         </p>
         <button
-          onClick={() => window.location.assign(getDashboardUrl())}
+          onClick={() => router.push('/')}
           className="mt-2 text-indigo-400 hover:text-indigo-300 text-sm underline underline-offset-4 transition-colors"
         >
           Connect workspace →
@@ -282,7 +278,7 @@ export default function EditorPage() {
           </p>
         )}
         <button
-          onClick={() => window.location.assign(getDashboardUrl())}
+          onClick={() => router.push('/')}
           className="text-indigo-400 hover:text-indigo-300 text-sm underline underline-offset-4 transition-colors"
         >
           Back to Dashboard
@@ -297,7 +293,7 @@ export default function EditorPage() {
         <p className="font-mono text-sm text-red-400">Failed to open file</p>
         <p className="text-xs text-neutral-600 max-w-xs">{loadError}</p>
         <button
-          onClick={() => window.location.assign(getDashboardUrl())}
+          onClick={() => router.push('/')}
           className="text-indigo-400 hover:text-indigo-300 text-sm underline underline-offset-4 transition-colors"
         >
           Back to Dashboard
