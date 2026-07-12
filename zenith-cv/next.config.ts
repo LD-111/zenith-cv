@@ -1,8 +1,8 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
-  /* config options here */
   assetPrefix: '/zenith-cv',
+  basePath: '/zenith-cv',
 };
 
 export default nextConfig;
