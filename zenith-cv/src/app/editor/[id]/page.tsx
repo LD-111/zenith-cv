@@ -7,7 +7,7 @@ import {
   useRef,
   startTransition,
 } from "react";
-import { useParams, useRouter } from "next/navigation";
+import { useParams } from "next/navigation";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import {
@@ -34,7 +34,6 @@ type ExportStatus = "idle" | "exporting";
 
 export default function EditorPage() {
   const params = useParams<{ id: string }>();
-  const router = useRouter();
 
   function getDashboardUrl(): string {
     if (typeof window === 'undefined') return '/';
@@ -168,8 +167,8 @@ export default function EditorPage() {
         // best-effort flush
       }
     }
-    router.push(getDashboardUrl());
-  }, [router, mode, rawId]);
+    window.location.assign(getDashboardUrl());
+  }, [mode, rawId]);
 
   const handleDownloadPDF = useCallback(async () => {
     if (exportStatus === "exporting") return;
@@ -262,7 +261,7 @@ export default function EditorPage() {
           The editor requires a connected local folder. Please go back to the dashboard and select your CV folder.
         </p>
         <button
-          onClick={() => router.push(getDashboardUrl())}
+          onClick={() => window.location.assign(getDashboardUrl())}
           className="mt-2 text-indigo-400 hover:text-indigo-300 text-sm underline underline-offset-4 transition-colors"
         >
           Connect workspace →
@@ -283,7 +282,7 @@ export default function EditorPage() {
           </p>
         )}
         <button
-          onClick={() => router.push(getDashboardUrl())}
+          onClick={() => window.location.assign(getDashboardUrl())}
           className="text-indigo-400 hover:text-indigo-300 text-sm underline underline-offset-4 transition-colors"
         >
           Back to Dashboard
@@ -298,7 +297,7 @@ export default function EditorPage() {
         <p className="font-mono text-sm text-red-400">Failed to open file</p>
         <p className="text-xs text-neutral-600 max-w-xs">{loadError}</p>
         <button
-          onClick={() => router.push(getDashboardUrl())}
+          onClick={() => window.location.assign(getDashboardUrl())}
           className="text-indigo-400 hover:text-indigo-300 text-sm underline underline-offset-4 transition-colors"
         >
           Back to Dashboard
