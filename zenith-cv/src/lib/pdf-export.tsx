@@ -84,8 +84,17 @@ const styles = StyleSheet.create({
     paddingLeft: 12,
   },
   bullet: {
-    width: 12,
+    width: 14,
     color: "#374151",
+  },
+  orderedMarker: {
+    width: 18,
+    color: "#374151",
+  },
+  nestedList: {
+    marginTop: 1,
+    marginBottom: 2,
+    paddingLeft: 10,
   },
   liText: {
     flex: 1,
@@ -236,6 +245,31 @@ function getListItemInline(item: ListItem): PhrasingContent[] {
   return inline;
 }
 
+function renderList(list: List, key: number, depth: number): React.ReactNode {
+  const start = list.start ?? 1;
+  return (
+    <View key={key} style={depth > 0 ? styles.nestedList : styles.ulWrap}>
+      {list.children.map((item, j) => {
+        const marker = list.ordered ? `${start + j}. ` : "• ";
+        const nested = item.children.filter((child): child is List => child.type === "list");
+        return (
+          <View key={j}>
+            <View style={styles.liRow}>
+              <Text style={list.ordered ? styles.orderedMarker : styles.bullet}>
+                {marker}
+              </Text>
+              <Text style={styles.liText}>
+                {renderInline(getListItemInline(item))}
+              </Text>
+            </View>
+            {nested.map((child, k) => renderList(child, k, Math.min(depth + 1, 1)))}
+          </View>
+        );
+      })}
+    </View>
+  );
+}
+
 function renderBlock(node: RootContent, i: number): React.ReactNode {
   switch (node.type) {
     case "heading": {
@@ -272,21 +306,8 @@ function renderBlock(node: RootContent, i: number): React.ReactNode {
       );
     }
 
-    case "list": {
-      const list = node as List;
-      return (
-        <View key={i} style={styles.ulWrap}>
-          {list.children.map((item, j) => (
-            <View key={j} style={styles.liRow}>
-              <Text style={styles.bullet}>{"• "}</Text>
-              <Text style={styles.liText}>
-                {renderInline(getListItemInline(item))}
-              </Text>
-            </View>
-          ))}
-        </View>
-      );
-    }
+    case "list":
+      return renderList(node as List, i, 0);
 
     case "thematicBreak": {
       void (node as ThematicBreak);
@@ -345,9 +366,12 @@ function renderBlock(node: RootContent, i: number): React.ReactNode {
   }
 }
 
+export type PdfPageSize = "A4" | "LETTER";
+
 export async function downloadCVAsPDF(
   markdown: string,
-  fileName: string
+  fileName: string,
+  pageSize: PdfPageSize = "A4"
 ): Promise<void> {
   const pdfName = fileName.replace(/\.md$/, "") + ".pdf";
   const tree = unified()
@@ -357,7 +381,7 @@ export async function downloadCVAsPDF(
 
   const docElement = (
     <Document>
-      <Page size="A4" style={styles.page}>
+      <Page size={pageSize} style={styles.page}>
         {tree.children.map((node, i) => renderBlock(node, i))}
       </Page>
     </Document>

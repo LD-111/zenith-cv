@@ -39,6 +39,7 @@ export interface MdFile {
 | `renameMdFile(old, new)` | read content, remove old, write new (no native rename) |
 | `fileExists(name)` | try getFileHandle |
 | `sanitizeSlug(str)` | lower, spaces→-, strip invalid |
+| `allocateCopySlug(base, isTaken)` | next free `base-copy` / `base-copy-N` slug |
 | `slugToDisplayName(slug)` | title case |
 | `formatFileSize(n)`, `formatDate(ts)` | UI helpers |
 
@@ -103,8 +104,9 @@ Used by create modal and demo cards. Keep format compatible with the PDF rendere
 - Dynamic-imported from editor.
 - Parses markdown with `unified` + `remark-parse` + `remark-gfm` → mdast.
 - Recursive walk to emit @react-pdf/renderer elements.
-- Supports headings, paragraphs, lists, links, tables, code (Courier), hr, blockquote, strong/em.
-- Page flow, A4-ish sizing, margins, fonts (Times-Roman family to match Georgia in preview).
+- Supports headings, paragraphs, lists (ordered markers + one nested indent), links, tables, code (Courier), hr, blockquote, strong/em.
+- `downloadCVAsPDF(markdown, fileName, pageSize)` — `pageSize` is `"A4"` (default) or `"LETTER"`.
+- Page flow, margins, fonts (Times-Roman family to match Georgia in preview).
 - No print CSS path for export (separate from Ctrl+P).
 
 ## Cross-cutting

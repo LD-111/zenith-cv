@@ -14,12 +14,14 @@ import {
   getDirectoryName,
   clearDirectoryHandle,
   scanMdFiles,
+  readMdFile,
   writeMdFile,
   deleteMdFile,
   renameMdFile,
   fileExists,
   sanitizeSlug,
   slugToDisplayName,
+  allocateCopySlug,
   formatFileSize,
   formatDate,
   type MdFile,
@@ -61,6 +63,7 @@ export default function Dashboard() {
   const [templateChoice, setTemplateChoice] = useState<TemplateChoice>("engineering");
   const [creating, setCreating] = useState(false);
 
+  const [query, setQuery] = useState("");
   const [renameTarget, setRenameTarget] = useState<string | null>(null);
   const [renameValue, setRenameValue] = useState("");
   const [renameError, setRenameError] = useState<string | null>(null);
@@ -156,6 +159,29 @@ export default function Dashboard() {
     },
     [router]
   );
+
+  const handleDuplicateLocal = useCallback(async (file: MdFile) => {
+    try {
+      const content = await readMdFile(file.fileName);
+      const taken = new Set<string>();
+      let slug = allocateCopySlug(file.slug, (s) => taken.has(s));
+      for (let i = 0; i < 20 && await fileExists(slug + ".md"); i++) {
+        taken.add(slug);
+        slug = allocateCopySlug(file.slug, (s) => taken.has(s));
+      }
+      await writeMdFile(slug + ".md", content);
+      router.push("/editor/" + encodeURIComponent(slug));
+    } catch (err) {
+      console.error("Failed to duplicate:", err);
+    }
+  }, [router]);
+
+  const handleDuplicateVirtual = useCallback((cv: VirtualCV) => {
+    const taken = new Set(listVirtualCVs().map((item) => item.name));
+    const slug = allocateCopySlug(cv.name, (s) => taken.has(s));
+    const copy = createVirtualCV(slug, cv.content);
+    router.push("/editor/" + encodeURIComponent(copy.id));
+  }, [router]);
 
   const handleDeleteLocal = useCallback(async (fileName: string) => {
     try {
@@ -316,6 +342,12 @@ export default function Dashboard() {
     }
   }, [creating]);
 
+  const q = query.trim().toLowerCase();
+  const matches = (name: string, fileName: string) =>
+    !q || name.toLowerCase().includes(q) || fileName.toLowerCase().includes(q) || slugToDisplayName(name).toLowerCase().includes(q);
+  const visibleFiles = files.filter((file) => matches(file.slug, file.fileName));
+  const visibleVirtual = virtualFiles.filter((cv) => matches(cv.name, cv.fileName));
+
   if (phase === "loading") {
     return (
       <div className="flex h-screen items-center justify-center bg-neutral-950">
@@ -451,7 +483,7 @@ export default function Dashboard() {
             </svg>
             <p className="text-xs text-amber-300/80 leading-relaxed">
               <span className="font-semibold text-amber-300">Web Sandbox Mode</span> — CVs are stored in session memory only and will be lost on page refresh.
-              {" "}Use <span className="font-semibold">Download PDF</span> in the editor to save your work.
+              {" "}Use <span className="font-semibold">Download .md</span> in the editor to keep the source, or <span className="font-semibold">Download PDF</span> for a copy.
               {fsSupported && (
                 <span>
                   {" "}Your browser supports Local File Mode —{" "}
@@ -478,6 +510,14 @@ export default function Dashboard() {
                   </p>
                 </div>
                 <div className="flex items-center gap-2">
+                  <input
+                    type="search"
+                    value={query}
+                    onChange={(e) => setQuery(e.target.value)}
+                    placeholder="Filter by name"
+                    aria-label="Filter CVs"
+                    className="w-36 px-2.5 py-1.5 text-xs bg-neutral-900 border border-neutral-800 focus:border-neutral-600 focus:outline-none rounded-md text-neutral-200 placeholder-neutral-600"
+                  />
                   <label
                     htmlFor="sandbox-upload"
                     className="cursor-pointer flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-neutral-400 hover:text-white border border-neutral-800 hover:border-neutral-600 rounded-md transition-colors"
@@ -493,8 +533,11 @@ export default function Dashboard() {
                 </div>
               </div>
 
+              {visibleVirtual.length === 0 ? (
+                <p className="mb-10 text-sm text-neutral-500">No CVs match “{query.trim()}”.</p>
+              ) : (
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 mb-10">
-                {virtualFiles.map((cv) => (
+                {visibleVirtual.map((cv) => (
                   <VirtualFileCard
                     key={cv.id}
                     cv={cv}
@@ -520,9 +563,11 @@ export default function Dashboard() {
                       setRenameValue("");
                       setRenameError(null);
                     }}
+                    onDuplicate={() => handleDuplicateVirtual(cv)}
                   />
                 ))}
               </div>
+              )}
 
               <div className="border-t border-neutral-900 pt-8">
                 <h3 className="text-xs font-mono font-medium text-neutral-600 uppercase tracking-widest mb-4">
@@ -667,6 +712,14 @@ export default function Dashboard() {
             </div>
           </div>
           <div className="flex items-center gap-2 shrink-0">
+            <input
+              type="search"
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder="Filter by name"
+              aria-label="Filter resumes"
+              className="w-36 px-2.5 py-1.5 text-xs bg-neutral-900 border border-neutral-800 focus:border-neutral-600 focus:outline-none rounded-md text-neutral-200 placeholder-neutral-600"
+            />
             <button
               onClick={refreshFiles}
               disabled={scanning}
@@ -719,9 +772,11 @@ export default function Dashboard() {
               Create New CV
             </button>
           </div>
+        ) : visibleFiles.length === 0 ? (
+          <p className="py-16 text-center text-sm text-neutral-500">No resumes match “{query.trim()}”.</p>
         ) : (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-            {files.map((file) => (
+            {visibleFiles.map((file) => (
               <FileCard
                 key={file.fileName}
                 file={file}
@@ -747,6 +802,7 @@ export default function Dashboard() {
                   setRenameValue("");
                   setRenameError(null);
                 }}
+                onDuplicate={() => handleDuplicateLocal(file)}
               />
             ))}
           </div>
@@ -960,6 +1016,7 @@ interface FileCardProps {
   onRenameChange: (value: string) => void;
   onRenameConfirm: () => void;
   onRenameCancel: () => void;
+  onDuplicate: () => void;
 }
 
 function FileCard({
@@ -976,6 +1033,7 @@ function FileCard({
   onRenameChange,
   onRenameConfirm,
   onRenameCancel,
+  onDuplicate,
 }: FileCardProps) {
   const renameInputRef = useRef<HTMLInputElement>(null);
 
@@ -1059,6 +1117,12 @@ function FileCard({
               Rename
             </button>
             <button
+              onClick={onDuplicate}
+              className="text-xs text-neutral-700 hover:text-indigo-300 transition-colors"
+            >
+              Duplicate
+            </button>
+            <button
               onClick={onDeleteRequest}
               className="text-xs text-neutral-700 hover:text-red-400 transition-colors"
             >
@@ -1085,6 +1149,7 @@ interface VirtualFileCardProps {
   onRenameChange: (value: string) => void;
   onRenameConfirm: () => void;
   onRenameCancel: () => void;
+  onDuplicate: () => void;
 }
 
 function VirtualFileCard({
@@ -1101,6 +1166,7 @@ function VirtualFileCard({
   onRenameChange,
   onRenameConfirm,
   onRenameCancel,
+  onDuplicate,
 }: VirtualFileCardProps) {
   const renameInputRef = useRef<HTMLInputElement>(null);
 
@@ -1181,6 +1247,12 @@ function VirtualFileCard({
               className="text-xs text-neutral-700 hover:text-cyan-400 transition-colors"
             >
               Rename
+            </button>
+            <button
+              onClick={onDuplicate}
+              className="text-xs text-neutral-700 hover:text-indigo-300 transition-colors"
+            >
+              Duplicate
             </button>
             <button onClick={onDeleteRequest} className="text-xs text-neutral-700 hover:text-red-400 transition-colors">
               Remove

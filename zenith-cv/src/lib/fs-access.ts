@@ -133,6 +133,18 @@ export function formatFileSize(bytes: number): string {
   return `${(bytes / 1024).toFixed(1)} KB`;
 }
 
+export function allocateCopySlug(
+  base: string,
+  isTaken: (slug: string) => boolean
+): string {
+  const root = base.replace(/-copy(?:-\d+)?$/i, "") || "cv";
+  for (let n = 1; n < 100; n++) {
+    const candidate = n === 1 ? `${root}-copy` : `${root}-copy-${n}`;
+    if (!isTaken(candidate)) return candidate;
+  }
+  return `${root}-copy-${Date.now()}`;
+}
+
 export function formatDate(ms: number): string {
   return new Intl.DateTimeFormat("en-GB", {
     day: "2-digit",

@@ -52,6 +52,10 @@ Editor decides mode purely via `isVirtualId(rawId)` from virtual-store.
 - Live Markdown preview with GFM.
 - Inline rename from dashboard cards and editor toolbar (Enter/Esc, validation, duplicate checks).
 - Mode badges and escape hatches in both directions.
+- Download `.md` from the editor (sandbox persist path). Duplicate creates a `-copy` slug and opens it.
+- Editor: A4/Letter export, page-budget indicator, spellcheck toggle, `Ctrl+S` flush and `Ctrl+E` PDF (shown in the editor chrome).
+- Dashboard name filter. Ordered lists and one nested level in the PDF.
+- No analytics. Privacy claim matches the build.
 
 See `src/app/AGENTS.md` and `src/lib/AGENTS.md` for details on implementation.
 

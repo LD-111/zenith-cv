@@ -11,7 +11,7 @@ All files are client components (`"use client"` at top of page.tsx files).
 
 ## File Map
 
-- `layout.tsx` — Root layout, Geist fonts (sans + mono), metadata, Vercel Analytics, html/body.
+- `layout.tsx` — Root layout, Geist fonts (sans + mono), metadata, html/body. No analytics.
 - `globals.css` — Tailwind import + `.cv-*` prose styles for preview + legacy `@media print`.
 - `page.tsx` — Dashboard (1193 LOC): phases, file grids, modals, rename UI.
 - `editor/[id]/page.tsx` — Editor (537 LOC): split view, autosave, rename, PDF export, load .md.
@@ -29,7 +29,7 @@ Logic in `useEffect` on mount + `isFsSupported()` + `getDirectoryHandle()`.
 **Features implemented in UI**:
 - Connect button → `pickDirectory()`
 - "Continue in Web Sandbox Mode" escape
-- Explorer: folder name, refresh, disconnect, file cards (display, slug, size, date, rename, delete)
+- Explorer: folder name, refresh, disconnect, name filter, file cards (display, slug, size, date, rename, duplicate, delete)
 - Sandbox: amber banner, upload .md (ref + FileReader → createVirtualCV), virtual cards, demo templates section, connect escape if supported.
 - Create modal (shared): 3 radio choices (blank/engineering/pm), name input, live slug preview, duplicate check via `fileExists` or list, create + navigate.
 - Rename: per-card hover pencil or button → inline input. Shared validation pattern.
@@ -92,7 +92,7 @@ const mode: EditorMode = isVirtualId(rawId) ? "virtual" : "local";
 
 Geist Sans for UI, Geist Mono for editor. Variables on html. Full height flex col.
 
-Analytics added.
+Analytics removed. Do not reintroduce a tracker.
 
 ## Error / Empty States
 
@@ -105,6 +105,9 @@ Analytics added.
 - When touching rename flows, keep dashboard + editor + both backends in sync.
 - Dashboard and editor both import formatters / sanitizers from lib.
 - Always test both modes.
-- PDF button only in editor.
+- PDF button only in editor. Page size (A4/Letter) is chosen in the preview header and passed to `downloadCVAsPDF`.
+- Shortcuts are labeled in the editor pane chrome: `Ctrl+S` flushes save, `Ctrl+E` exports PDF. `metaKey` is also accepted.
+- Download `.md` writes the current buffer. Duplicate allocates `name-copy` / `name-copy-N` and navigates to it.
+- Page budget measures preview content height against the selected page's content box (page height minus 28mm padding).
 
 Update this AGENTS.md (and parents) after modifying dashboard or editor behavior, adding UI features, or changing CSS.

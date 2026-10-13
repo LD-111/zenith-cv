@@ -42,10 +42,15 @@ Derives `initialFileName` and initial virtual name from store or slug.
 ### Other Actions
 - Back: flush save immediately, then push("/").
 - Load .md: replaces markdown (triggers autosave).
-- Export PDF: dynamic import pdf-export, generatePdf(markdown), create blob URL, click download link. Spinner state.
+- Export PDF: dynamic import pdf-export, `downloadCVAsPDF(markdown, fileName, pageSize)`. Spinner state. A4 or Letter from preview header.
+- Download `.md`: blob download of the current buffer.
+- Duplicate: `allocateCopySlug`, write/create, then `router.push` the copy.
+- Shortcuts: `Ctrl+S` / `⌘S` calls `flushSave`. `Ctrl+E` / `⌘E` calls PDF export. Labeled in the editor pane chrome and on the PDF button title.
+- Spellcheck toggle on the textarea (default off).
+- Page budget: `ResizeObserver` on preview content vs content-box height (269mm A4, 251.4mm Letter). Shows `1 page` or `N pages · overflows`.
 
 ### UI Layout
-- Fixed toolbar (back, name+rename, status, load, export).
+- Fixed toolbar (back, name+rename, status, duplicate, download .md, load, export). Shortcut legend in the editor pane header.
 - Flex 1 row: textarea (50%) + preview card (50%).
 - Preview uses ReactMarkdown + GFM; classes from globals.css `.cv-*`.
 - Dark editor, light preview.

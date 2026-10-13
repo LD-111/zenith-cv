@@ -18,6 +18,7 @@ import {
   fileExists,
   sanitizeSlug,
   slugToDisplayName,
+  allocateCopySlug,
 } from "@/lib/fs-access";
 import {
   isVirtualId,
@@ -25,12 +26,24 @@ import {
   updateVirtualCV,
   updateVirtualCVName,
   listVirtualCVs,
+  createVirtualCV,
 } from "@/lib/virtual-store";
 
 type SaveStatus = "idle" | "saving" | "saved" | "error";
 type LoadState = "loading" | "ready" | "no-workspace" | "not-found" | "error";
 type EditorMode = "local" | "virtual";
 type ExportStatus = "idle" | "exporting";
+type PageSize = "A4" | "LETTER";
+
+function contentLimitPx(size: PageSize): number {
+  const mm = size === "LETTER" ? 251.4 : 269;
+  const probe = document.createElement("div");
+  probe.style.cssText = `position:absolute;visibility:hidden;height:${mm}mm;width:0;pointer-events:none;`;
+  document.body.appendChild(probe);
+  const px = probe.getBoundingClientRect().height;
+  probe.remove();
+  return px;
+}
 
 export default function EditorPage() {
   const params = useParams<{ id: string }>();
@@ -59,6 +72,10 @@ export default function EditorPage() {
   const [saveStatus, setSaveStatus] = useState<SaveStatus>("idle");
   const [loadError, setLoadError] = useState<string | null>(null);
   const [exportStatus, setExportStatus] = useState<ExportStatus>("idle");
+  const [pageSize, setPageSize] = useState<PageSize>("A4");
+  const [spellCheck, setSpellCheck] = useState(false);
+  const [pageCount, setPageCount] = useState(1);
+  const previewContentRef = useRef<HTMLDivElement>(null);
 
   const [renameMode, setRenameMode] = useState(false);
   const [renameValue, setRenameValue] = useState("");
@@ -149,35 +166,116 @@ export default function EditorPage() {
     };
   }, [markdown, loadState, mode, rawId]);
 
-  const handleBackToDashboard = useCallback(async () => {
+  const flushSave = useCallback(async () => {
     if (saveTimerRef.current) {
       clearTimeout(saveTimerRef.current);
       saveTimerRef.current = null;
-      try {
-        if (mode === "virtual") {
-          updateVirtualCV(rawId, currentMarkdown.current);
-        } else {
-          await writeMdFile(activeFileNameRef.current, currentMarkdown.current);
-        }
-      } catch {
-        // best-effort flush
-      }
     }
-    router.push('/');
-  }, [mode, rawId, router]);
+    if (loadState !== "ready") return;
+    setSaveStatus("saving");
+    try {
+      if (mode === "virtual") {
+        updateVirtualCV(rawId, currentMarkdown.current);
+      } else {
+        await writeMdFile(activeFileNameRef.current, currentMarkdown.current);
+      }
+      setSaveStatus("saved");
+      if (savedTimerRef.current) clearTimeout(savedTimerRef.current);
+      savedTimerRef.current = setTimeout(() => setSaveStatus("idle"), 2500);
+    } catch (err) {
+      console.error("Save failed:", err);
+      setSaveStatus("error");
+    }
+  }, [loadState, mode, rawId]);
+
+  const handleBackToDashboard = useCallback(async () => {
+    await flushSave();
+    router.push("/");
+  }, [flushSave, router]);
 
   const handleDownloadPDF = useCallback(async () => {
     if (exportStatus === "exporting") return;
     setExportStatus("exporting");
     try {
       const { downloadCVAsPDF } = await import("@/lib/pdf-export");
-      await downloadCVAsPDF(currentMarkdown.current, activeFileNameRef.current);
+      await downloadCVAsPDF(currentMarkdown.current, activeFileNameRef.current, pageSize);
     } catch (err) {
       console.error("PDF export failed:", err);
     } finally {
       setExportStatus("idle");
     }
-  }, [exportStatus]);
+  }, [exportStatus, pageSize]);
+
+  const handleDownloadMd = useCallback(() => {
+    const name = activeFileNameRef.current.endsWith(".md")
+      ? activeFileNameRef.current
+      : activeFileNameRef.current + ".md";
+    const blob = new Blob([currentMarkdown.current], { type: "text/markdown;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = name;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+  }, []);
+
+  const handleDuplicate = useCallback(async () => {
+    await flushSave();
+    try {
+      if (mode === "virtual") {
+        const taken = new Set(listVirtualCVs().map((cv) => cv.name));
+        const slug = allocateCopySlug(activeVirtualName || "cv", (s) => taken.has(s));
+        const cv = createVirtualCV(slug, currentMarkdown.current);
+        router.push("/editor/" + encodeURIComponent(cv.id));
+        return;
+      }
+      const taken = new Set<string>();
+      let slug = allocateCopySlug(activeSlug, (s) => taken.has(s));
+      for (let i = 0; i < 20 && await fileExists(slug + ".md"); i++) {
+        taken.add(slug);
+        slug = allocateCopySlug(activeSlug, (s) => taken.has(s));
+      }
+      await writeMdFile(slug + ".md", currentMarkdown.current);
+      router.push("/editor/" + encodeURIComponent(slug));
+    } catch (err) {
+      console.error("Failed to duplicate:", err);
+    }
+  }, [activeSlug, activeVirtualName, flushSave, mode, router]);
+
+  useEffect(() => {
+    if (loadState !== "ready") return;
+    const onKey = (e: KeyboardEvent) => {
+      if (!(e.ctrlKey || e.metaKey) || e.altKey) return;
+      const key = e.key.toLowerCase();
+      if (key === "s") {
+        e.preventDefault();
+        void flushSave();
+      } else if (key === "e") {
+        e.preventDefault();
+        void handleDownloadPDF();
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [loadState, flushSave, handleDownloadPDF]);
+
+  useEffect(() => {
+    if (loadState !== "ready") return;
+    const el = previewContentRef.current;
+    if (!el) return;
+    const measure = () => {
+      const limit = contentLimitPx(pageSize);
+      const height = el.scrollHeight;
+      const pages = height <= limit + 2 ? 1 : Math.max(1, Math.ceil(height / Math.max(limit, 1)));
+      startTransition(() => setPageCount(pages));
+    };
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [loadState, markdown, pageSize]);
 
   const handleUpload = useCallback(
     (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -426,6 +524,34 @@ export default function EditorPage() {
             )}
           </div>
 
+          <span className="hidden xl:flex items-center gap-1.5 text-[10px] font-mono text-neutral-500 mr-1" title="Ctrl or ⌘">
+            <kbd className="px-1 py-0.5 rounded border border-neutral-700 text-neutral-400">Ctrl+S</kbd>
+            save
+            <kbd className="px-1 py-0.5 rounded border border-neutral-700 text-neutral-400">Ctrl+E</kbd>
+            PDF
+          </span>
+
+          <button
+            onClick={handleDuplicate}
+            className="hidden sm:flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-neutral-400 hover:text-white border border-neutral-700 hover:border-neutral-500 rounded-md transition-colors"
+            title="Duplicate as a -copy file and open it"
+          >
+            Duplicate
+          </button>
+
+          <button
+            onClick={handleDownloadMd}
+            className="flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-neutral-400 hover:text-white border border-neutral-700 hover:border-neutral-500 rounded-md transition-colors"
+            title="Download the Markdown source"
+          >
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+              <polyline points="7 10 12 15 17 10" />
+              <line x1="12" y1="15" x2="12" y2="3" />
+            </svg>
+            .md
+          </button>
+
           <label
             htmlFor="md-upload"
             className="cursor-pointer flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-neutral-400 hover:text-white border border-neutral-700 hover:border-neutral-500 rounded-md transition-colors"
@@ -448,6 +574,7 @@ export default function EditorPage() {
           <button
             onClick={handleDownloadPDF}
             disabled={exportStatus === "exporting"}
+            title="Download PDF (Ctrl+E)"
             className="flex items-center gap-1.5 px-4 py-1.5 text-sm font-semibold text-white bg-indigo-600 hover:bg-indigo-500 active:bg-indigo-800 disabled:opacity-60 disabled:cursor-not-allowed rounded-md transition-colors"
           >
             {exportStatus === "exporting" ? (
@@ -478,11 +605,26 @@ export default function EditorPage() {
               <span className="w-3 h-3 rounded-full bg-green-400" />
             </div>
             <span className="text-xs text-neutral-400 font-mono ml-1">{activeFileName}</span>
+            <span className="ml-auto flex items-center gap-2">
+              <span className="text-[10px] font-mono text-neutral-400">Ctrl+S save · Ctrl+E PDF</span>
+              <button
+                type="button"
+                onClick={() => setSpellCheck((on) => !on)}
+                aria-pressed={spellCheck}
+                className={`px-2 py-0.5 text-[10px] font-mono rounded border transition-colors ${
+                  spellCheck
+                    ? "border-indigo-300 bg-indigo-50 text-indigo-700"
+                    : "border-neutral-300 text-neutral-500 hover:text-neutral-800"
+                }`}
+              >
+                Spellcheck {spellCheck ? "on" : "off"}
+              </button>
+            </span>
           </div>
           <textarea
             value={markdown}
             onChange={(e) => setMarkdown(e.target.value)}
-            spellCheck={false}
+            spellCheck={spellCheck}
             className="flex-1 w-full resize-none p-5 font-mono text-sm leading-relaxed text-neutral-800 bg-neutral-50 focus:outline-none focus:bg-white transition-colors"
             placeholder="Start writing your resume in Markdown…"
             aria-label="Markdown editor"
@@ -494,14 +636,36 @@ export default function EditorPage() {
           aria-label="CV Preview"
           id="cv-preview"
         >
-          <div className="shrink-0 flex items-center justify-between px-4 py-2 bg-white border-b border-neutral-200 print:hidden">
+          <div className="shrink-0 flex items-center justify-between gap-3 px-4 py-2 bg-white border-b border-neutral-200 print:hidden">
             <span className="text-xs font-medium text-neutral-400 uppercase tracking-widest">
               Preview
             </span>
+            <div className="flex items-center gap-2">
+              <div className="flex rounded-md border border-neutral-200 overflow-hidden">
+                {(["A4", "LETTER"] as const).map((size) => (
+                  <button
+                    key={size}
+                    type="button"
+                    onClick={() => setPageSize(size)}
+                    className={`px-2 py-0.5 text-[10px] font-mono ${
+                      pageSize === size
+                        ? "bg-neutral-900 text-white"
+                        : "bg-white text-neutral-500 hover:text-neutral-800"
+                    }`}
+                  >
+                    {size === "LETTER" ? "Letter" : "A4"}
+                  </button>
+                ))}
+              </div>
+              <span className={`text-[10px] font-mono ${pageCount > 1 ? "text-amber-600" : "text-neutral-400"}`}>
+                {pageCount === 1 ? "1 page" : `${pageCount} pages · overflows`}
+              </span>
+            </div>
           </div>
 
           <div className="flex-1 p-8 print:p-0">
-            <article className="cv-content mx-auto max-w-[210mm] min-h-[297mm] bg-white px-[16mm] py-[14mm] shadow-sm print:shadow-none print:max-w-none print:min-h-0 print:px-0 print:py-0">
+            <article className={`cv-content mx-auto bg-white px-[16mm] py-[14mm] shadow-sm print:shadow-none print:max-w-none print:min-h-0 print:px-0 print:py-0 ${pageSize === "LETTER" ? "max-w-[215.9mm] min-h-[279.4mm]" : "max-w-[210mm] min-h-[297mm]"}`}>
+              <div ref={previewContentRef}>
               <ReactMarkdown
                 remarkPlugins={[remarkGfm]}
                 components={{
@@ -510,6 +674,7 @@ export default function EditorPage() {
                   h3: ({ children }) => <h3 className="cv-h3">{children}</h3>,
                   p: ({ children }) => <p className="cv-p">{children}</p>,
                   ul: ({ children }) => <ul className="cv-ul">{children}</ul>,
+                  ol: ({ children }) => <ol className="cv-ol">{children}</ol>,
                   li: ({ children }) => <li className="cv-li">{children}</li>,
                   strong: ({ children }) => <strong className="cv-strong">{children}</strong>,
                   em: ({ children }) => <em className="cv-em">{children}</em>,
@@ -528,6 +693,7 @@ export default function EditorPage() {
               >
                 {markdown}
               </ReactMarkdown>
+              </div>
             </article>
           </div>
         </section>

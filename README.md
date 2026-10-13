@@ -25,6 +25,9 @@ Zenith CV fixes this by treating your CV as **first-class Markdown** that render
 - **Templates & demos**: Engineering, Product Manager, and Blank starters. One-click demo CVs for quick starts. Upload any existing `.md` file.
 - **Autosave & reliability**: 500ms debounced autosave. Stream writes (`FileSystemWritableFileStream`) for atomic local saves. Flush-on-navigate.
 - **Rename anywhere**: Inline rename on dashboard cards and editor toolbar. Works in both modes with validation.
+- **Download `.md` and duplicate**: Keep the Markdown source (required in sandbox). Duplicate opens a `-copy` file.
+- **Page size and length**: A4 or US Letter. Preview shows when the CV overflows one page.
+- **Editor shortcuts**: `Ctrl+S` saves immediately, `Ctrl+E` downloads the PDF. Both are labeled in the editor.
 - **Mode awareness**: Subtle emerald/amber badges everywhere. "Connect Folder" escape hatch even in sandbox when FS is supported.
 - **No bloat**: Minimal Next.js 16 + Tailwind 4 setup. Print CSS retained as fallback for Ctrl+P.
 
