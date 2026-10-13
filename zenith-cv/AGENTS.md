@@ -4,63 +4,88 @@
 This version has breaking changes — APIs, conventions, and file structure may all differ from your training data. Read the relevant guide in `node_modules/next/dist/docs/` before writing any code. Heed deprecation notices.
 <!-- END:nextjs-agent-rules -->
 
+# Zenith CV — App-level Agent Memory
+
+> App-specific architecture, modes, current features, and implementation notes for the Next.js application.
+> See root `AGENTS.md` for general conventions, update rules, and drill-down guidance.
+> For low-level lib details see `src/lib/AGENTS.md`; for UI pages see `src/app/AGENTS.md`.
+
 ## Architecture Overview
 
 Zenith CV is a Next.js application for creating and editing resumes in Markdown format with PDF export capabilities. The app supports two modes:
 
 1. **Local File Mode**: Files are stored directly on the user's computer using the File System Access API (Chrome/Edge only)
-2. **Web Sandbox Mode**: Files are stored in session memory, lost on page refresh
+2. **Web Sandbox Mode**: Files are stored in session memory (module Map), lost on page refresh
 
-### Project Structure
+### Storage Model (Hybrid)
 
-- `src/app/page.tsx` - Home dashboard showing all CVs and file management UI
-- `src/app/editor/[id]/page.tsx` - Main editor with split-panel Markdown editor and live preview
-- `src/lib/fs-access.ts` - File system operations for local mode (read, write, delete, rename files)
-- `src/lib/virtual-store.ts` - In-memory storage for web sandbox mode
-- `src/lib/pdf-export.tsx` - PDF export functionality
-- `src/lib/templates.ts` - Default CV templates
+Determined at runtime by `isFsSupported()` (presence of `showDirectoryPicker`).
 
-### Key Features
+- Local: uses `src/lib/fs-access.ts` + real FS handles. Single source of truth on disk.
+- Sandbox: `src/lib/virtual-store.ts` Map. Survives route changes in tab, lost on reload/refresh.
 
-- **Rename Files**: Users can rename CVs from both the homescreen cards and the editor header
-  - Local files are renamed via the File System Access API
-  - Virtual files (sandbox mode) update their name in memory
-  - Input validation prevents empty names and file conflicts
-  - Rename UI is intuitive with inline editing and keyboard shortcuts (Enter to save, Escape to cancel)
+Users can voluntarily enter Sandbox even on supporting browsers via the connect screen escape hatch.
 
-- **File Operations**: Create, read, write, delete, and rename Markdown files
-- **Auto-save**: Changes are automatically saved with debouncing (500ms)
-- **PDF Export**: Download CVs as formatted PDFs
-- **Templates**: Pre-made templates for Software Engineers and Product Managers
+### Mode Indicators
 
-### Rename Feature Implementation
+- Local: emerald pill "Local File Mode" (pulse on connected)
+- Sandbox: amber pill "Web Sandbox Mode" + persistent amber banner warning "session memory only — use Download PDF to persist"
 
-#### Backend Functions
+### Routing
 
-**fs-access.ts**:
-- `renameMdFile(oldFileName: string, newFileName: string)` - Renames files on disk by reading the old file's content and writing it to a new file name, then deleting the old file
+- `/` → Dashboard (`src/app/page.tsx`)
+- `/editor/[id]` → Editor (`src/app/editor/[id]/page.tsx`)
 
-**virtual-store.ts**:
-- `updateVirtualCVName(id: string, newName: string)` - Updates the name and fileName of a virtual CV in memory
+`id` is slug (local) or `virtual_*` id. Decoded with `decodeURIComponent`.
 
-#### Frontend UI
+Editor decides mode purely via `isVirtualId(rawId)` from virtual-store.
 
-**Homescreen (page.tsx)**:
-- FileCard component: Rename button appears on hover, opens inline editor when clicked
-- VirtualFileCard component: Same rename UI for sandbox mode files
-- Rename input shows `.md` extension display, validates input before confirming
+## Current Features (Working State)
 
-**Editor (editor/[id]/page.tsx)**:
-- Rename pencil icon (✎) next to the file name in the header
-- Inline editing with input field, Save and Cancel buttons
-- Error display for invalid names or conflicts
-- Works in both local and sandbox modes
+- Hybrid FS + virtual storage with correct fallback.
+- Full CRUD + rename for CVs in both modes.
+- 3-template selector on create (Engineering / PM / Blank).
+- Demo templates loadable instantly in sandbox.
+- .md upload (FileReader) works in both modes.
+- Debounced autosave (500ms) + flush-on-back.
+- Real text-based PDF export via @react-pdf/renderer (ATS safe, selectable).
+- Live Markdown preview with GFM.
+- Inline rename from dashboard cards and editor toolbar (Enter/Esc, validation, duplicate checks).
+- Mode badges and escape hatches in both directions.
 
-### Development Notes
+See `src/app/AGENTS.md` and `src/lib/AGENTS.md` for details on implementation.
 
-- All state management uses React hooks (useState, useCallback, useRef)
-- Server Transition API is used for optimistic UI updates
-- The app uses Tailwind CSS for styling
-- Keyboard shortcuts: Enter to confirm, Escape to cancel in rename mode
-- Rename errors are displayed inline and cleared when user starts new input
+## Rename Feature (Implemented)
 
+Renaming was added after the initial V4 docs.
+
+### Backend
+
+- `fs-access.ts`: `renameMdFile(oldFileName, newFileName)` — reads content, removes old entry, writes to new handle.
+- `virtual-store.ts`: `updateVirtualCVName(id, newName)` — mutates name + fileName.
+
+### Frontend
+
+- Dashboard (`page.tsx`): FileCard / VirtualFileCard show rename on hover. Inline input with .md hint. Validates non-empty + !exists. Uses startTransition.
+- Editor: Pencil icon next to name in toolbar. Inline edit + Save/Cancel. Updates active state immediately; calls rename + router replace for URL update in local mode.
+
+Validation and errors shown inline; cleared on new input.
+
+Keyboard: Enter confirms, Escape cancels.
+
+## Development Notes (App)
+
+- Heavy use of `useCallback`, `useRef`, `useEffect` + `startTransition` for state.
+- Refs used for current content (flush), timers (debounce), upload inputs.
+- No external state libs; everything local + module state.
+- Tailwind dark theme + specific prose classes in globals.css.
+- PDF generation is async dynamic import; spinner during export.
+- Error handling: silent AbortError on picker cancel; explicit states for not-found / no-workspace.
+
+## Sub-AGENTS Index
+
+- `src/lib/AGENTS.md` — detailed function tables, interfaces, and notes for fs-access, virtual-store, pdf-export, templates, use-fs-support.
+- `src/app/AGENTS.md` — dashboard phases, editor behavior, CSS, layout.
+- `src/app/editor/AGENTS.md` — editor-specific flows (if present).
+
+Update this file when high-level features or cross-cutting app behavior changes.
