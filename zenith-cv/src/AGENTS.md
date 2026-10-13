@@ -8,8 +8,7 @@ src/
 │   ├── virtual-store.ts
 │   ├── pdf-export.tsx
 │   ├── templates.ts
-│   ├── use-fs-support.ts
-│   └── storage.ts (legacy)
+│   └── use-fs-support.ts
 └── app/          ← Next.js App Router UI (see app/AGENTS.md)
     ├── layout.tsx
     ├── globals.css

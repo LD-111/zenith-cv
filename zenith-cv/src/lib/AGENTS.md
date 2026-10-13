@@ -81,11 +81,9 @@ export interface VirtualCV {
 
 ```ts
 export function isFsSupported(): boolean
-export function useFsSupport(): { supported: boolean; checked: boolean }
 ```
 
 - Pure function safe anywhere (SSR guarded).
-- Hook uses `startTransition` for setState in effect.
 
 Used by dashboard to branch to sandbox vs connect/explorer.
 
@@ -109,13 +107,9 @@ Used by create modal and demo cards. Keep format compatible with the PDF rendere
 - Page flow, A4-ish sizing, margins, fonts (Times-Roman family to match Georgia in preview).
 - No print CSS path for export (separate from Ctrl+P).
 
-### storage.ts (Legacy)
-
-Old localStorage-based implementation. Not imported anywhere. Do not extend.
-
 ## Cross-cutting
 
-- When editing storage, keep local and virtual in sync (e.g. same rename semantics, same slug/display rules).
+- When editing storage modules (fs-access / virtual-store), keep them in sync (e.g. same rename semantics, same slug/display rules).
 - Sanitize on create/rename to prevent FS issues.
 - Never assume the handle or Map entry exists — callers check.
 
