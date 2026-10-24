@@ -1,3 +1,8 @@
+import {
+  forgetDirectoryHandle,
+  saveDirectoryHandle,
+} from "@/lib/dir-persist";
+
 type DirectoryHandleWithIterators = FileSystemDirectoryHandle & {
   entries(): AsyncIterableIterator<[string, FileSystemHandle]>;
 };
@@ -19,8 +24,13 @@ export function getDirectoryName(): string | null {
   return _dirHandle ? _dirHandle.name : null;
 }
 
+export function adoptDirectoryHandle(handle: FileSystemDirectoryHandle): void {
+  _dirHandle = handle;
+}
+
 export function clearDirectoryHandle(): void {
   _dirHandle = null;
+  void forgetDirectoryHandle().catch(() => {});
 }
 
 export async function pickDirectory(): Promise<FileSystemDirectoryHandle> {
@@ -37,8 +47,9 @@ export async function pickDirectory(): Promise<FileSystemDirectoryHandle> {
         startIn?: string;
       }) => Promise<FileSystemDirectoryHandle>;
     }
-  ).showDirectoryPicker({ mode: "readwrite" });
+  ).showDirectoryPicker({ mode: "readwrite", id: "zenith-cv" });
   _dirHandle = handle;
+  void saveDirectoryHandle(handle).catch(() => {});
   return handle;
 }
 

@@ -5,12 +5,18 @@
 src/
 ├── lib/          ← Pure modules + state (see lib/AGENTS.md)
 │   ├── fs-access.ts
+│   ├── dir-persist.ts
 │   ├── virtual-store.ts
 │   ├── pdf-export.tsx
+│   ├── cv-theme.ts
+│   ├── frontmatter.ts
+│   ├── snippets.ts
+│   ├── tailor.ts
 │   ├── templates.ts
 │   └── use-fs-support.ts
 └── app/          ← Next.js App Router UI (see app/AGENTS.md)
     ├── layout.tsx
+    ├── leave-guard.tsx
     ├── globals.css
     ├── page.tsx (Dashboard)
     └── editor/
@@ -21,7 +27,7 @@ src/
 ## Guidelines for src/
 - lib/ changes require updating both local and virtual paths for parity.
 - app/ changes should consider both Local and Sandbox modes.
-- No server components or API routes currently — everything client.
+- Layout is a server component that mounts the client `LeaveGuard`. Pages stay client. No API routes.
 
 Drill down to the sub `AGENTS.md` files for details.
 

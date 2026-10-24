@@ -56,6 +56,9 @@ Editor decides mode purely via `isVirtualId(rawId)` from virtual-store.
 - Editor: A4/Letter export, page-budget indicator, spellcheck toggle, `Ctrl+S` flush and `Ctrl+E` PDF (shown in the editor chrome).
 - Dashboard name filter. Ordered lists and one nested level in the PDF.
 - No analytics. Privacy claim matches the build.
+- Folder handle is remembered in IndexedDB (permission re-requested). Disconnect forgets it.
+- Serif and compact Sans themes share `cv-theme.ts` tokens for preview CSS and PDF.
+- Snippet insert, hidden `target`/`notes` frontmatter, session-only tailor check, and a leave warning for undownloaded sandbox CVs.
 
 See `src/app/AGENTS.md` and `src/lib/AGENTS.md` for details on implementation.
 

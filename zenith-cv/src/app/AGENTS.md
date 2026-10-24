@@ -11,7 +11,8 @@ All files are client components (`"use client"` at top of page.tsx files).
 
 ## File Map
 
-- `layout.tsx` — Root layout, Geist fonts (sans + mono), metadata, html/body. No analytics.
+- `layout.tsx` — Root layout, Geist fonts (sans + mono), metadata, `LeaveGuard`, html/body. No analytics.
+- `leave-guard.tsx` — `beforeunload` when any sandbox CV has not had its `.md` downloaded since the last edit.
 - `globals.css` — Tailwind import + `.cv-*` prose styles for preview + legacy `@media print`.
 - `page.tsx` — Dashboard (1193 LOC): phases, file grids, modals, rename UI.
 - `editor/[id]/page.tsx` — Editor (537 LOC): split view, autosave, rename, PDF export, load .md.
@@ -27,7 +28,7 @@ All files are client components (`"use client"` at top of page.tsx files).
 Logic in `useEffect` on mount + `isFsSupported()` + `getDirectoryHandle()`.
 
 **Features implemented in UI**:
-- Connect button → `pickDirectory()`
+- Connect button → `pickDirectory()`. On load, restore a granted IndexedDB handle into explorer. If permission is `prompt`, connect screen shows Reconnect. Disconnect forgets the stored handle.
 - "Continue in Web Sandbox Mode" escape
 - Explorer: folder name, refresh, disconnect, name filter, file cards (display, slug, size, date, rename, duplicate, delete)
 - Sandbox: amber banner, upload .md (ref + FileReader → createVirtualCV), virtual cards, demo templates section, connect escape if supported.
@@ -75,7 +76,7 @@ const mode: EditorMode = isVirtualId(rawId) ? "virtual" : "local";
 - Mode badge.
 
 **Preview**:
-- Right pane: ReactMarkdown + remarkGfm, wrapped in light A4 card with `.cv-content` classes.
+- Right pane: ReactMarkdown + remarkGfm, wrapped in a light page card (`.cv-content`) that is `w-full` with `max-w` of A4/Letter so it does not overflow the pane.
 - Editor textarea left, mono, full height.
 
 **Refs & effects** careful to avoid stale closures and satisfy ESLint.

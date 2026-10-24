@@ -26,51 +26,54 @@ import type {
   TableRow,
   TableCell,
 } from "mdast";
+import { getTheme, type ThemeId, type CvTheme } from "@/lib/cv-theme";
+import { splitFrontmatter } from "@/lib/frontmatter";
 
-const styles = StyleSheet.create({
+function buildPdfStyles(theme: CvTheme) {
+  return StyleSheet.create({
   page: {
-    fontFamily: "Times-Roman",
-    fontSize: 10.5,
-    lineHeight: 1.45,
-    color: "#1a1a1a",
+    fontFamily: theme.pdfFont,
+    fontSize: theme.fontSize,
+    lineHeight: theme.lineHeight,
+    color: theme.color,
     paddingTop: "14mm",
     paddingBottom: "14mm",
     paddingLeft: "16mm",
     paddingRight: "16mm",
   },
   h1: {
-    fontSize: 22,
-    fontFamily: "Times-Bold",
-    color: "#111827",
-    letterSpacing: -0.44,
+    fontSize: theme.h1Size,
+    fontFamily: theme.pdfFontBold,
+    color: theme.heading,
+    letterSpacing: theme.h1TrackingEm * theme.h1Size,
     marginBottom: 1,
     lineHeight: 1.15,
   },
   h2Wrap: {
-    marginTop: 10,
+    marginTop: theme.h2MarginTop * 0.55,
     marginBottom: 3,
     paddingBottom: 2,
     borderBottomWidth: 1.5,
-    borderBottomColor: "#e0e7ff",
+    borderBottomColor: theme.softRule,
     borderBottomStyle: "solid",
   },
   h2: {
-    fontSize: 10,
-    fontFamily: "Times-Bold",
-    color: "#4338ca",
+    fontSize: theme.h2Size,
+    fontFamily: theme.pdfFontBold,
+    color: theme.accent,
     textTransform: "uppercase",
-    letterSpacing: 1.2,
+    letterSpacing: theme.h2TrackingEm * theme.h2Size,
   },
   h3: {
-    fontSize: 11,
-    fontFamily: "Times-Bold",
-    color: "#111827",
-    marginTop: 7,
+    fontSize: theme.h3Size,
+    fontFamily: theme.pdfFontBold,
+    color: theme.heading,
+    marginTop: theme.h3MarginTop * 0.6,
     marginBottom: 0,
   },
   p: {
     marginTop: 0,
-    marginBottom: 3,
+    marginBottom: theme.pMarginBottom * 0.5,
     color: "#374151",
     textAlign: "justify",
   },
@@ -102,16 +105,16 @@ const styles = StyleSheet.create({
     textAlign: "justify",
   },
   strong: {
-    fontFamily: "Times-Bold",
-    color: "#111827",
+    fontFamily: theme.pdfFontBold,
+    color: theme.heading,
   },
   em: {
-    fontFamily: "Times-Italic",
-    color: "#6b7280",
-    fontSize: 9.5,
+    fontFamily: theme.pdfFontItalic,
+    color: theme.muted,
+    fontSize: theme.emSize,
   },
   link: {
-    color: "#4338ca",
+    color: theme.accent,
     textDecoration: "none",
   },
   inlineCode: {
@@ -121,20 +124,20 @@ const styles = StyleSheet.create({
   },
   hrWrap: {
     borderTopWidth: 1,
-    borderTopColor: "#e5e7eb",
+    borderTopColor: theme.rule,
     marginTop: 7,
     marginBottom: 7,
   },
   blockquoteWrap: {
     borderLeftWidth: 3,
-    borderLeftColor: "#e0e7ff",
+    borderLeftColor: theme.softRule,
     paddingLeft: 12,
     marginTop: 4,
     marginBottom: 4,
   },
   blockquoteText: {
-    fontFamily: "Times-Italic",
-    color: "#6b7280",
+    fontFamily: theme.pdfFontItalic,
+    color: theme.muted,
     textAlign: "justify",
   },
   codeBlockWrap: {
@@ -176,11 +179,14 @@ const styles = StyleSheet.create({
     paddingHorizontal: 6,
     color: "#374151",
     fontSize: 9.5,
-    fontFamily: "Times-Bold",
+    fontFamily: theme.pdfFontBold,
   },
-});
+  });
+}
 
-function renderInline(nodes: PhrasingContent[]): React.ReactNode[] {
+type PdfStyles = ReturnType<typeof buildPdfStyles>;
+
+function renderInline(nodes: PhrasingContent[], styles: PdfStyles): React.ReactNode[] {
   return nodes.map((node, i) => {
     switch (node.type) {
       case "text":
@@ -188,13 +194,13 @@ function renderInline(nodes: PhrasingContent[]): React.ReactNode[] {
       case "strong":
         return (
           <Text key={i} style={styles.strong}>
-            {renderInline(node.children as PhrasingContent[])}
+            {renderInline(node.children as PhrasingContent[], styles)}
           </Text>
         );
       case "emphasis":
         return (
           <Text key={i} style={styles.em}>
-            {renderInline(node.children as PhrasingContent[])}
+            {renderInline(node.children as PhrasingContent[], styles)}
           </Text>
         );
       case "inlineCode":
@@ -207,7 +213,7 @@ function renderInline(nodes: PhrasingContent[]): React.ReactNode[] {
         return (
           <Link key={i} src={node.url}>
             <Text style={styles.link}>
-              {renderInline(node.children as PhrasingContent[])}
+              {renderInline(node.children as PhrasingContent[], styles)}
             </Text>
           </Link>
         );
@@ -216,14 +222,14 @@ function renderInline(nodes: PhrasingContent[]): React.ReactNode[] {
       case "delete":
         return (
           <Text key={i} style={{ textDecoration: "line-through" }}>
-            {renderInline(node.children as PhrasingContent[])}
+            {renderInline(node.children as PhrasingContent[], styles)}
           </Text>
         );
       default:
         if ("children" in node && Array.isArray(node.children)) {
           return (
             <Text key={i}>
-              {renderInline(node.children as PhrasingContent[])}
+              {renderInline(node.children as PhrasingContent[], styles)}
             </Text>
           );
         }
@@ -245,7 +251,7 @@ function getListItemInline(item: ListItem): PhrasingContent[] {
   return inline;
 }
 
-function renderList(list: List, key: number, depth: number): React.ReactNode {
+function renderList(list: List, key: number, depth: number, styles: PdfStyles): React.ReactNode {
   const start = list.start ?? 1;
   return (
     <View key={key} style={depth > 0 ? styles.nestedList : styles.ulWrap}>
@@ -259,10 +265,10 @@ function renderList(list: List, key: number, depth: number): React.ReactNode {
                 {marker}
               </Text>
               <Text style={styles.liText}>
-                {renderInline(getListItemInline(item))}
+                {renderInline(getListItemInline(item), styles)}
               </Text>
             </View>
-            {nested.map((child, k) => renderList(child, k, Math.min(depth + 1, 1)))}
+            {nested.map((child, k) => renderList(child, k, Math.min(depth + 1, 1), styles))}
           </View>
         );
       })}
@@ -270,14 +276,14 @@ function renderList(list: List, key: number, depth: number): React.ReactNode {
   );
 }
 
-function renderBlock(node: RootContent, i: number): React.ReactNode {
+function renderBlock(node: RootContent, i: number, styles: PdfStyles): React.ReactNode {
   switch (node.type) {
     case "heading": {
       const h = node as Heading;
       if (h.depth === 1) {
         return (
           <Text key={i} style={styles.h1}>
-            {renderInline(h.children as PhrasingContent[])}
+            {renderInline(h.children as PhrasingContent[], styles)}
           </Text>
         );
       }
@@ -285,14 +291,14 @@ function renderBlock(node: RootContent, i: number): React.ReactNode {
         return (
           <View key={i} style={styles.h2Wrap} wrap={false}>
             <Text style={styles.h2}>
-              {renderInline(h.children as PhrasingContent[])}
+              {renderInline(h.children as PhrasingContent[], styles)}
             </Text>
           </View>
         );
       }
       return (
         <Text key={i} style={styles.h3} wrap={false}>
-          {renderInline(h.children as PhrasingContent[])}
+          {renderInline(h.children as PhrasingContent[], styles)}
         </Text>
       );
     }
@@ -301,13 +307,13 @@ function renderBlock(node: RootContent, i: number): React.ReactNode {
       const p = node as Paragraph;
       return (
         <Text key={i} style={styles.p}>
-          {renderInline(p.children as PhrasingContent[])}
+          {renderInline(p.children as PhrasingContent[], styles)}
         </Text>
       );
     }
 
     case "list":
-      return renderList(node as List, i, 0);
+      return renderList(node as List, i, 0, styles);
 
     case "thematicBreak": {
       void (node as ThematicBreak);
@@ -322,7 +328,7 @@ function renderBlock(node: RootContent, i: number): React.ReactNode {
             if (child.type === "paragraph") {
               return (
                 <Text key={j} style={styles.blockquoteText}>
-                  {renderInline((child as Paragraph).children as PhrasingContent[])}
+                  {renderInline((child as Paragraph).children as PhrasingContent[], styles)}
                 </Text>
               );
             }
@@ -352,7 +358,7 @@ function renderBlock(node: RootContent, i: number): React.ReactNode {
                   key={c}
                   style={r === 0 ? styles.tableHeaderCell : styles.tableCell}
                 >
-                  {renderInline(cell.children as PhrasingContent[])}
+                  {renderInline(cell.children as PhrasingContent[], styles)}
                 </Text>
               ))}
             </View>
@@ -371,18 +377,20 @@ export type PdfPageSize = "A4" | "LETTER";
 export async function downloadCVAsPDF(
   markdown: string,
   fileName: string,
-  pageSize: PdfPageSize = "A4"
+  pageSize: PdfPageSize = "A4",
+  themeId: ThemeId = "serif"
 ): Promise<void> {
+  const styles = buildPdfStyles(getTheme(themeId));
   const pdfName = fileName.replace(/\.md$/, "") + ".pdf";
   const tree = unified()
     .use(remarkParse)
     .use(remarkGfm)
-    .parse(markdown) as Root;
+    .parse(splitFrontmatter(markdown).body) as Root;
 
   const docElement = (
     <Document>
       <Page size={pageSize} style={styles.page}>
-        {tree.children.map((node, i) => renderBlock(node, i))}
+        {tree.children.map((node, i) => renderBlock(node, i, styles))}
       </Page>
     </Document>
   );

@@ -30,8 +30,9 @@ export interface MdFile {
 **Exported API**
 | Function | Purpose |
 |----------|---------|
-| `pickDirectory()` | Show picker (readwrite), store handle |
-| `getDirectoryHandle()` / `getDirectoryName()` / `clearDirectoryHandle()` | Accessor + reset |
+| `pickDirectory()` | Show picker (readwrite, id `zenith-cv`), store handle, persist to IndexedDB |
+| `adoptDirectoryHandle(handle)` | Restore a stored handle into module state |
+| `getDirectoryHandle()` / `getDirectoryName()` / `clearDirectoryHandle()` | Accessor + reset. Clear also forgets the stored handle |
 | `scanMdFiles()` | Async iter dir, collect *.md as MdFile[], sort by mtime desc |
 | `readMdFile(name)` | getFileHandle + getFile().text() |
 | `writeMdFile(name, content)` | get/create handle → createWritable() → write → close (atomic stream) |
@@ -72,6 +73,8 @@ export interface VirtualCV {
 | `deleteVirtualCV(id)` | remove |
 | `listVirtualCVs()` | array sorted desc lastModified |
 | `isVirtualId(id)` | `id.startsWith("virtual_")` |
+| `markVirtualDownloaded(id)` / `isVirtualDownloaded(id)` | `.md` download flag. `updateVirtualCV` clears it when content changes |
+| `hasUndownloadedVirtualCVs()` | True if any sandbox CV has not had its `.md` downloaded since the last edit |
 
 **Notes**
 - ID generation: `virtual_${Date.now()}_${rand6}`
@@ -105,7 +108,7 @@ Used by create modal and demo cards. Keep format compatible with the PDF rendere
 - Parses markdown with `unified` + `remark-parse` + `remark-gfm` → mdast.
 - Recursive walk to emit @react-pdf/renderer elements.
 - Supports headings, paragraphs, lists (ordered markers + one nested indent), links, tables, code (Courier), hr, blockquote, strong/em.
-- `downloadCVAsPDF(markdown, fileName, pageSize)` — `pageSize` is `"A4"` (default) or `"LETTER"`.
+- `downloadCVAsPDF(markdown, fileName, pageSize, themeId)` — `pageSize` is `"A4"` or `"LETTER"`. `themeId` is `"serif"` or `"sans"`. `buildPdfStyles` runs per call; the resulting `StyleSheet` is passed into `renderInline` / `renderList` / `renderBlock` so concurrent exports with different themes cannot clobber each other. Leading frontmatter is stripped before parse.
 - Page flow, margins, fonts (Times-Roman family to match Georgia in preview).
 - No print CSS path for export (separate from Ctrl+P).
 
@@ -114,5 +117,30 @@ Used by create modal and demo cards. Keep format compatible with the PDF rendere
 - When editing storage modules (fs-access / virtual-store), keep them in sync (e.g. same rename semantics, same slug/display rules).
 - Sanitize on create/rename to prevent FS issues.
 - Never assume the handle or Map entry exists — callers check.
+
+### dir-persist.ts
+
+IndexedDB (`zenith-cv` / `handles` / `directory`) stores the directory handle only. No file contents.
+
+| Function | Purpose |
+|----------|---------|
+| `saveDirectoryHandle` / `loadDirectoryHandle` / `forgetDirectoryHandle` | Persist, restore, delete |
+| `queryDirectoryPermission` / `requestDirectoryPermission` | `readwrite`. Request must run from a click |
+
+### cv-theme.ts
+
+`SERIF_THEME` and `SANS_THEME`. `themeCssVars` drives preview CSS variables. PDF `StyleSheet` is built from the same object. Module `getThemeId` / `setThemeId` survives client navigation, not disk. Sans is Helvetica, single column, no icons.
+
+### frontmatter.ts
+
+`splitFrontmatter` reads a leading `---` block. `target` and `notes` are returned separately. The body is what preview and PDF render.
+
+### snippets.ts
+
+`SNIPPETS`: experience, skills, education, project. Plain Markdown inserted at the textarea cursor.
+
+### tailor.ts
+
+`analyzeTailor(body, job)` is pure. Flags missing Contact / Experience / Education. Overlap is case-insensitive terms of length ≥ 4, stopwords removed. No network, no storage.
 
 Update this file + parents when lib contracts or behavior changes.

@@ -42,7 +42,11 @@ Derives `initialFileName` and initial virtual name from store or slug.
 ### Other Actions
 - Back: flush save immediately, then push("/").
 - Load .md: replaces markdown (triggers autosave).
-- Export PDF: dynamic import pdf-export, `downloadCVAsPDF(markdown, fileName, pageSize)`. Spinner state. A4 or Letter from preview header.
+- Export PDF: dynamic import pdf-export, `downloadCVAsPDF(markdown, fileName, pageSize, themeId)`. Spinner state. A4 or Letter, Serif or Sans, from the preview header. Frontmatter is stripped inside the exporter.
+- Preview renders `splitFrontmatter(markdown).body` with `themeCssVars`. Article is `w-full` with `max-w` of the selected page (210mm A4 / 215.9mm Letter) so the card shrinks on narrow panes instead of overflowing. Page budget follows the rendered wrap.
+- Insert menu writes a snippet at the textarea selection.
+- Tailor panel holds a job description in component state only. Overlap terms are `<mark>`ed in the preview. PDF export does not include marks.
+- Download `.md` in virtual mode calls `markVirtualDownloaded`.
 - Download `.md`: blob download of the current buffer.
 - Duplicate: `allocateCopySlug`, write/create, then `router.push` the copy.
 - Shortcuts: `Ctrl+S` / `⌘S` calls `flushSave`. `Ctrl+E` / `⌘E` calls PDF export. Labeled in the editor pane chrome and on the PDF button title.

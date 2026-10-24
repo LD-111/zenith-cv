@@ -8,6 +8,7 @@ export interface VirtualCV {
 }
 
 const _store = new Map<string, VirtualCV>();
+const _downloaded = new Set<string>();
 
 function makeId(): string {
   return `virtual_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
@@ -39,6 +40,7 @@ export function getVirtualCV(id: string): VirtualCV | null {
 export function updateVirtualCV(id: string, content: string): void {
   const cv = _store.get(id);
   if (!cv) throw new Error(`Virtual CV "${id}" not found.`);
+  if (cv.content !== content) _downloaded.delete(id);
   _store.set(id, {
     ...cv,
     content,
@@ -60,6 +62,22 @@ export function updateVirtualCVName(id: string, newName: string): void {
 
 export function deleteVirtualCV(id: string): void {
   _store.delete(id);
+  _downloaded.delete(id);
+}
+
+export function markVirtualDownloaded(id: string): void {
+  if (_store.has(id)) _downloaded.add(id);
+}
+
+export function isVirtualDownloaded(id: string): boolean {
+  return _downloaded.has(id);
+}
+
+export function hasUndownloadedVirtualCVs(): boolean {
+  for (const cv of _store.values()) {
+    if (!_downloaded.has(cv.id)) return true;
+  }
+  return false;
 }
 
 export function listVirtualCVs(): VirtualCV[] {

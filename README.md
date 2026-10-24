@@ -28,6 +28,9 @@ Zenith CV fixes this by treating your CV as **first-class Markdown** that render
 - **Download `.md` and duplicate**: Keep the Markdown source (required in sandbox). Duplicate opens a `-copy` file.
 - **Page size and length**: A4 or US Letter. Preview shows when the CV overflows one page.
 - **Editor shortcuts**: `Ctrl+S` saves immediately, `Ctrl+E` downloads the PDF. Both are labeled in the editor.
+- **Remembered folder**: Chrome/Edge can reopen the last CV folder after a refresh. Disconnect forgets it. File contents are never copied into the browser database.
+- **Themes**: Serif or compact Sans. One token set drives the preview and the PDF.
+- **Tailoring aids**: Insert experience, skills, education, or project blocks. `target` and `notes` frontmatter stay out of the preview and PDF. A tailor panel compares a pasted job description in memory only.
 - **Mode awareness**: Subtle emerald/amber badges everywhere. "Connect Folder" escape hatch even in sandbox when FS is supported.
 - **No bloat**: Minimal Next.js 16 + Tailwind 4 setup. Print CSS retained as fallback for Ctrl+P.
 

@@ -4,8 +4,12 @@ import {
   useState,
   useEffect,
   useCallback,
+  useMemo,
   useRef,
   startTransition,
+  isValidElement,
+  cloneElement,
+  Fragment,
 } from "react";
 import { useParams, useRouter } from "next/navigation";
 import ReactMarkdown from "react-markdown";
@@ -27,13 +31,40 @@ import {
   updateVirtualCVName,
   listVirtualCVs,
   createVirtualCV,
+  markVirtualDownloaded,
 } from "@/lib/virtual-store";
+import { getTheme, getThemeId, setThemeId, themeCssVars, type ThemeId } from "@/lib/cv-theme";
+import { splitFrontmatter } from "@/lib/frontmatter";
+import { SNIPPETS } from "@/lib/snippets";
+import { analyzeTailor } from "@/lib/tailor";
 
 type SaveStatus = "idle" | "saving" | "saved" | "error";
 type LoadState = "loading" | "ready" | "no-workspace" | "not-found" | "error";
 type EditorMode = "local" | "virtual";
 type ExportStatus = "idle" | "exporting";
 type PageSize = "A4" | "LETTER";
+
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function highlightNode(node: React.ReactNode, pattern: RegExp | null): React.ReactNode {
+  if (!pattern) return node;
+  if (typeof node === "string") {
+    const parts = node.split(pattern);
+    if (parts.length === 1) return node;
+    return parts.map((part, i) =>
+      i % 2 === 1 ? <mark key={i} className="cv-mark">{part}</mark> : part
+    );
+  }
+  if (Array.isArray(node)) {
+    return node.map((child, i) => <Fragment key={i}>{highlightNode(child, pattern)}</Fragment>);
+  }
+  if (isValidElement<{ children?: React.ReactNode }>(node) && node.props.children != null) {
+    return cloneElement(node, undefined, highlightNode(node.props.children, pattern));
+  }
+  return node;
+}
 
 function contentLimitPx(size: PageSize): number {
   const mm = size === "LETTER" ? 251.4 : 269;
@@ -73,9 +104,24 @@ export default function EditorPage() {
   const [loadError, setLoadError] = useState<string | null>(null);
   const [exportStatus, setExportStatus] = useState<ExportStatus>("idle");
   const [pageSize, setPageSize] = useState<PageSize>("A4");
+  const [themeId, setTheme] = useState<ThemeId>(getThemeId());
   const [spellCheck, setSpellCheck] = useState(false);
   const [pageCount, setPageCount] = useState(1);
+  const [insertOpen, setInsertOpen] = useState(false);
+  const [tailorOpen, setTailorOpen] = useState(false);
+  const [jobText, setJobText] = useState("");
   const previewContentRef = useRef<HTMLDivElement>(null);
+  const editorRef = useRef<HTMLTextAreaElement>(null);
+  const theme = getTheme(themeId);
+  const meta = splitFrontmatter(markdown);
+  const report = useMemo(
+    () => (tailorOpen && jobText.trim() ? analyzeTailor(meta.body, jobText) : null),
+    [tailorOpen, jobText, meta.body]
+  );
+  const highlightPattern = useMemo(() => {
+    if (!report || report.overlap.length === 0) return null;
+    return new RegExp(`(${report.overlap.map(escapeRegExp).join("|")})`, "gi");
+  }, [report]);
 
   const [renameMode, setRenameMode] = useState(false);
   const [renameValue, setRenameValue] = useState("");
@@ -198,13 +244,13 @@ export default function EditorPage() {
     setExportStatus("exporting");
     try {
       const { downloadCVAsPDF } = await import("@/lib/pdf-export");
-      await downloadCVAsPDF(currentMarkdown.current, activeFileNameRef.current, pageSize);
+      await downloadCVAsPDF(currentMarkdown.current, activeFileNameRef.current, pageSize, themeId);
     } catch (err) {
       console.error("PDF export failed:", err);
     } finally {
       setExportStatus("idle");
     }
-  }, [exportStatus, pageSize]);
+  }, [exportStatus, pageSize, themeId]);
 
   const handleDownloadMd = useCallback(() => {
     const name = activeFileNameRef.current.endsWith(".md")
@@ -219,7 +265,8 @@ export default function EditorPage() {
     a.click();
     a.remove();
     URL.revokeObjectURL(url);
-  }, []);
+    if (mode === "virtual") markVirtualDownloaded(rawId);
+  }, [mode, rawId]);
 
   const handleDuplicate = useCallback(async () => {
     await flushSave();
@@ -276,6 +323,21 @@ export default function EditorPage() {
     observer.observe(el);
     return () => observer.disconnect();
   }, [loadState, markdown, pageSize]);
+
+  const insertSnippet = useCallback((body: string) => {
+    const el = editorRef.current;
+    const start = el?.selectionStart ?? markdown.length;
+    const end = el?.selectionEnd ?? markdown.length;
+    const prefix = start > 0 && markdown[start - 1] !== "\n" ? "\n" : "";
+    const next = markdown.slice(0, start) + prefix + body + markdown.slice(end);
+    setMarkdown(next);
+    const cursor = start + prefix.length + body.length;
+    setInsertOpen(false);
+    requestAnimationFrame(() => {
+      el?.focus();
+      el?.setSelectionRange(cursor, cursor);
+    });
+  }, [markdown]);
 
   const handleUpload = useCallback(
     (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -572,6 +634,19 @@ export default function EditorPage() {
           />
 
           <button
+            type="button"
+            onClick={() => setTailorOpen((open) => !open)}
+            aria-pressed={tailorOpen}
+            className={`px-3 py-1.5 text-sm font-medium rounded-md border transition-colors ${
+              tailorOpen
+                ? "text-white border-amber-700 bg-amber-900/40"
+                : "text-neutral-400 border-neutral-700 hover:text-white hover:border-neutral-500"
+            }`}
+          >
+            Tailor
+          </button>
+
+          <button
             onClick={handleDownloadPDF}
             disabled={exportStatus === "exporting"}
             title="Download PDF (Ctrl+E)"
@@ -596,6 +671,35 @@ export default function EditorPage() {
         </div>
       </header>
 
+      {tailorOpen && (
+        <div className="shrink-0 border-b border-neutral-800 bg-neutral-900 px-4 py-3 print:hidden">
+          <div className="flex gap-4">
+            <textarea
+              value={jobText}
+              onChange={(e) => setJobText(e.target.value)}
+              placeholder="Paste a job description. It stays in this tab and is not saved."
+              className="w-1/2 h-24 resize-none rounded-md border border-neutral-700 bg-neutral-950 px-3 py-2 text-xs text-neutral-200 placeholder-neutral-600 focus:outline-none focus:border-neutral-500"
+              aria-label="Job description"
+            />
+            <div className="flex-1 text-xs text-neutral-400 leading-relaxed overflow-y-auto max-h-24">
+              {!jobText.trim() && <p>Paste a description to compare headings and terms. Nothing leaves this tab.</p>}
+              {report && (
+                <>
+                  <p>Overlap {report.overlapCount}/{report.termCount}</p>
+                  {report.missing.length > 0 && (
+                    <p className="text-amber-400">Missing: {report.missing.join(", ")}</p>
+                  )}
+                  {report.missing.length === 0 && <p className="text-emerald-500">Contact, experience, and education are present.</p>}
+                  {report.missingTerms.length > 0 && (
+                    <p className="mt-1">Not in CV: {report.missingTerms.join(", ")}</p>
+                  )}
+                </>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
       <div className="flex flex-1 overflow-hidden print:block print:overflow-visible">
         <section className="flex flex-col w-1/2 border-r border-neutral-200 print:hidden">
           <div className="flex items-center gap-2 px-4 py-2 bg-neutral-50 border-b border-neutral-200 shrink-0">
@@ -604,7 +708,30 @@ export default function EditorPage() {
               <span className="w-3 h-3 rounded-full bg-yellow-400" />
               <span className="w-3 h-3 rounded-full bg-green-400" />
             </div>
-            <span className="text-xs text-neutral-400 font-mono ml-1">{activeFileName}</span>
+            <span className="text-xs text-neutral-400 font-mono ml-1 truncate">{activeFileName}</span>
+            <div className="relative">
+              <button
+                type="button"
+                onClick={() => setInsertOpen((open) => !open)}
+                className="px-2 py-0.5 text-[10px] font-mono rounded border border-neutral-300 text-neutral-500 hover:text-neutral-800"
+              >
+                Insert
+              </button>
+              {insertOpen && (
+                <div className="absolute left-0 top-full z-10 mt-1 w-32 rounded-md border border-neutral-200 bg-white shadow">
+                  {SNIPPETS.map((snippet) => (
+                    <button
+                      key={snippet.id}
+                      type="button"
+                      onClick={() => insertSnippet(snippet.body)}
+                      className="block w-full text-left px-3 py-1.5 text-xs text-neutral-700 hover:bg-neutral-50"
+                    >
+                      {snippet.label}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
             <span className="ml-auto flex items-center gap-2">
               <span className="text-[10px] font-mono text-neutral-400">Ctrl+S save · Ctrl+E PDF</span>
               <button
@@ -622,6 +749,7 @@ export default function EditorPage() {
             </span>
           </div>
           <textarea
+            ref={editorRef}
             value={markdown}
             onChange={(e) => setMarkdown(e.target.value)}
             spellCheck={spellCheck}
@@ -632,7 +760,7 @@ export default function EditorPage() {
         </section>
 
         <section
-          className="flex flex-col w-1/2 overflow-y-auto bg-white print:w-full print:overflow-visible"
+          className="flex flex-col w-1/2 overflow-auto bg-white print:w-full print:overflow-visible"
           aria-label="CV Preview"
           id="cv-preview"
         >
@@ -641,6 +769,25 @@ export default function EditorPage() {
               Preview
             </span>
             <div className="flex items-center gap-2">
+              <div className="flex rounded-md border border-neutral-200 overflow-hidden">
+                {(["serif", "sans"] as const).map((id) => (
+                  <button
+                    key={id}
+                    type="button"
+                    onClick={() => {
+                      setThemeId(id);
+                      setTheme(id);
+                    }}
+                    className={`px-2 py-0.5 text-[10px] font-mono ${
+                      themeId === id
+                        ? "bg-neutral-900 text-white"
+                        : "bg-white text-neutral-500 hover:text-neutral-800"
+                    }`}
+                  >
+                    {id === "serif" ? "Serif" : "Sans"}
+                  </button>
+                ))}
+              </div>
               <div className="flex rounded-md border border-neutral-200 overflow-hidden">
                 {(["A4", "LETTER"] as const).map((size) => (
                   <button
@@ -660,22 +807,30 @@ export default function EditorPage() {
               <span className={`text-[10px] font-mono ${pageCount > 1 ? "text-amber-600" : "text-neutral-400"}`}>
                 {pageCount === 1 ? "1 page" : `${pageCount} pages · overflows`}
               </span>
+              {(meta.target || meta.notes) && (
+                <span className="text-[10px] font-mono text-neutral-400 truncate max-w-[180px]" title="Stripped from preview and PDF">
+                  Hidden{meta.target ? `: ${meta.target}` : ""}{meta.notes ? " · notes" : ""}
+                </span>
+              )}
             </div>
           </div>
 
           <div className="flex-1 p-8 print:p-0">
-            <article className={`cv-content mx-auto bg-white px-[16mm] py-[14mm] shadow-sm print:shadow-none print:max-w-none print:min-h-0 print:px-0 print:py-0 ${pageSize === "LETTER" ? "max-w-[215.9mm] min-h-[279.4mm]" : "max-w-[210mm] min-h-[297mm]"}`}>
+            <article
+              className={`cv-content mx-auto w-full bg-white px-[16mm] py-[14mm] shadow-sm print:shadow-none print:max-w-none print:min-h-0 print:px-0 print:py-0 ${pageSize === "LETTER" ? "max-w-[215.9mm] min-h-[279.4mm]" : "max-w-[210mm] min-h-[297mm]"}`}
+              style={themeCssVars(theme)}
+            >
               <div ref={previewContentRef}>
               <ReactMarkdown
                 remarkPlugins={[remarkGfm]}
                 components={{
-                  h1: ({ children }) => <h1 className="cv-h1">{children}</h1>,
-                  h2: ({ children }) => <h2 className="cv-h2">{children}</h2>,
-                  h3: ({ children }) => <h3 className="cv-h3">{children}</h3>,
-                  p: ({ children }) => <p className="cv-p">{children}</p>,
+                  h1: ({ children }) => <h1 className="cv-h1">{highlightNode(children, highlightPattern)}</h1>,
+                  h2: ({ children }) => <h2 className="cv-h2">{highlightNode(children, highlightPattern)}</h2>,
+                  h3: ({ children }) => <h3 className="cv-h3">{highlightNode(children, highlightPattern)}</h3>,
+                  p: ({ children }) => <p className="cv-p">{highlightNode(children, highlightPattern)}</p>,
                   ul: ({ children }) => <ul className="cv-ul">{children}</ul>,
                   ol: ({ children }) => <ol className="cv-ol">{children}</ol>,
-                  li: ({ children }) => <li className="cv-li">{children}</li>,
+                  li: ({ children }) => <li className="cv-li">{highlightNode(children, highlightPattern)}</li>,
                   strong: ({ children }) => <strong className="cv-strong">{children}</strong>,
                   em: ({ children }) => <em className="cv-em">{children}</em>,
                   a: ({ href, children }) => (
@@ -691,7 +846,7 @@ export default function EditorPage() {
                   td: ({ children }) => <td className="cv-td">{children}</td>,
                 }}
               >
-                {markdown}
+                {meta.body}
               </ReactMarkdown>
               </div>
             </article>
