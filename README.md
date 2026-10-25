@@ -2,84 +2,82 @@
 
 **Privacy-first, self-contained Markdown-to-PDF resume builder.**
 
-Your resumes live as plain `.md` files you fully control — either directly on disk (Chrome/Edge) or in browser memory (other browsers). Beautiful live preview, real text-based PDF export, zero accounts, zero cloud, zero lock-in.
+[![CI](https://github.com/LD-111/zenith-cv/actions/workflows/ci.yml/badge.svg)](https://github.com/LD-111/zenith-cv/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+[![Next.js](https://img.shields.io/badge/Next.js-16-black)](https://nextjs.org/)
 
-## The Problem It Solves
+[Live demo](https://cv.ldevia.dev/) · resumes stay in your browser. No accounts, no cloud, no lock-in.
 
-Traditional resume tools suffer from:
+![Connect screen](docs/screenshots/connect.png)
 
-- **Privacy & lock-in**: Data trapped in SaaS dashboards; no easy export or Git history.
-- **Bloat & ATS issues**: WYSIWYG editors produce non-semantic HTML/PDF that ATS parsers and recruiters hate.
-- **Friction**: Accounts, paywalls, and clunky UIs for what should be simple text.
-- **Portability**: Can't easily version, diff, or store resumes alongside code projects.
+Your CVs are plain `.md` files you control — on disk in Chrome/Edge, or in tab memory everywhere else. Live preview and a real text-based PDF, not a print-dialog screenshot.
 
-Zenith CV fixes this by treating your CV as **first-class Markdown** that renders to a clean, professional, ATS-friendly PDF.
+## Why it exists
+
+Typical resume tools trap data in a SaaS dashboard, emit PDF that ATS parsers struggle with, and add accounts for what should be text. Zenith CV treats the CV as first-class Markdown and renders a selectable, indexable PDF.
 
 ## Features
 
-- **True hybrid storage**
-  - **Local File Mode** (Chrome/Edge): Direct read/write of `.md` files via the File System Access API. No `localStorage`, database, or cloud sync.
-  - **Web Sandbox Mode** (Firefox, Safari, deployments): In-memory virtual CVs that survive route changes but are cleared on refresh. Clear amber banners warn you.
-- **Live Markdown editor + preview**: Split-pane with `react-markdown` + GFM support (tables, task lists, strikethrough). What you see is exactly what you get in the PDF.
-- **Real PDF export** (primary path): Uses `@react-pdf/renderer` to produce selectable, indexable, text-based PDFs (not a print dialog hack). Multi-page, ATS-compatible. The export code is dynamically imported.
-- **Templates & demos**: Engineering, Product Manager, and Blank starters. One-click demo CVs for quick starts. Upload any existing `.md` file.
-- **Autosave & reliability**: 500ms debounced autosave. Stream writes (`FileSystemWritableFileStream`) for atomic local saves. Flush-on-navigate.
-- **Rename anywhere**: Inline rename on dashboard cards and editor toolbar. Works in both modes with validation.
-- **Download `.md` and duplicate**: Keep the Markdown source (required in sandbox). Duplicate opens a `-copy` file.
-- **Page size and length**: A4 or US Letter. Preview shows when the CV overflows one page.
-- **Editor shortcuts**: `Ctrl+S` saves immediately, `Ctrl+E` downloads the PDF. Both are labeled in the editor.
-- **Remembered folder**: Chrome/Edge can reopen the last CV folder after a refresh. Disconnect forgets it. File contents are never copied into the browser database.
-- **Themes**: Serif or compact Sans. One token set drives the preview and the PDF.
-- **Tailoring aids**: Insert experience, skills, education, or project blocks. `target` and `notes` frontmatter stay out of the preview and PDF. A tailor panel compares a pasted job description in memory only.
-- **Mode awareness**: Subtle emerald/amber badges everywhere. "Connect Folder" escape hatch even in sandbox when FS is supported.
-- **No bloat**: Minimal Next.js 16 + Tailwind 4 setup. Print CSS retained as fallback for Ctrl+P.
+- **Hybrid storage** — Local File Mode (Chrome/Edge, File System Access API) writes `.md` files on disk. Web Sandbox Mode keeps virtual CVs in tab memory, with amber warnings, and is the path on Firefox, Safari, and the public demo.
+- **Live editor + preview** — Split pane, GFM (tables, task lists, strikethrough). Preview matches the PDF.
+- **Text-based PDF** — `@react-pdf/renderer` export (dynamically imported). Multi-page, ATS-friendly. A4 or US Letter, with a page-budget indicator.
+- **Templates** — Engineering, Product Manager, and Blank. One-click demos. Upload an existing `.md`.
+- **Autosave** — 500ms debounce, stream writes locally, flush on navigate. `Ctrl+S` saves, `Ctrl+E` exports PDF.
+- **Rename, duplicate, download** — Inline rename on cards and in the editor. Duplicate opens a `-copy`. Download `.md` is the persist path in sandbox.
+- **Themes** — Serif or compact Sans. One token set drives preview CSS and PDF.
+- **Tailoring** — Insert experience, skills, education, or project blocks. Hidden `target` / `notes` frontmatter. Session-only job-description overlap check.
+- **Remembered folder** — Chrome/Edge can reopen the last directory after refresh (handle only). Disconnect forgets it.
+
+![Sandbox dashboard](docs/screenshots/sandbox.png)
+
+![Editor split view](docs/screenshots/editor.png)
 
 ## Architecture
 
-Runtime mode is chosen via feature detection:
+Runtime mode is feature-detected:
 
 ```ts
-// src/lib/use-fs-support.ts
 export function isFsSupported(): boolean {
   return typeof window !== "undefined" && "showDirectoryPicker" in window;
 }
 ```
 
-**Dashboard phases**:
-- `connect` → prompt for folder (local) or "continue in sandbox"
-- `explorer` → local files grid (when connected)
-- `sandbox` → virtual CVs + upload + demos
+```mermaid
+flowchart TD
+  start[Dashboard load] --> detect{showDirectoryPicker?}
+  detect -->|yes| connect[Connect folder or sandbox]
+  detect -->|no| sandbox[Web Sandbox]
+  connect -->|folder granted| explorer[Local explorer]
+  connect -->|opt out| sandbox
+  explorer --> editor["Editor /editor/slug"]
+  sandbox --> editorV["Editor /editor/virtual_id"]
+  editor --> disk[File System Access API]
+  editorV --> memory[In-memory Map]
+```
 
-**Editor** (`/editor/[id]`): Single route handles both modes by checking if `id` starts with `virtual_`:
+The editor is one route. If the id starts with `virtual_`, load and autosave go to the in-memory store; otherwise they go through the File System Access API.
 
-| Mode     | Load                        | Autosave target                  |
-|----------|-----------------------------|----------------------------------|
-| local    | `readMdFile()` via FS API   | `writeMdFile()` (stream write)   |
-| virtual  | `getVirtualCV(id).content`  | `updateVirtualCV()` (Map mutate) |
+| Mode    | Load                      | Autosave                         |
+|---------|---------------------------|----------------------------------|
+| local   | `readMdFile()` via FS API | `writeMdFile()` (stream write)   |
+| virtual | `getVirtualCV(id)`        | `updateVirtualCV()` (Map mutate) |
 
-All state is module-level (never GC'd on client nav):
-- `fs-access.ts`: `_dirHandle`
-- `virtual-store.ts`: `Map<string, VirtualCV>`
+Module-level state survives client navigation: `_dirHandle` in `fs-access.ts`, `Map<string, VirtualCV>` in `virtual-store.ts`. PDF generation walks mdast (`unified` + `remark-parse` + `remark-gfm`) and emits `@react-pdf/renderer` elements.
 
-PDF generation walks the mdast (unified + remark-parse + remark-gfm) and emits `@react-pdf/renderer` elements.
+## Tech stack
 
-See `AGENTS.md` for the full V4 specification.
+| Layer     | Technology                                        |
+|-----------|---------------------------------------------------|
+| Framework | Next.js 16 (App Router)                           |
+| Language  | TypeScript 5 (strict)                             |
+| UI        | React 19                                          |
+| Styling   | Tailwind CSS 4 (`@import "tailwindcss"`)          |
+| Markdown  | `react-markdown` + `remark-gfm`                   |
+| PDF       | `@react-pdf/renderer` + unified / remark          |
+| Runtime   | Node 20+                                          |
+| Lint      | ESLint 9 (flat config)                            |
 
-## Tech Stack
-
-| Layer          | Technology                                      |
-|----------------|-------------------------------------------------|
-| Framework      | Next.js 16 (App Router)                         |
-| Language       | TypeScript 5 (strict)                           |
-| UI             | React 19                                        |
-| Styling        | Tailwind CSS 4 (`@import "tailwindcss"`, no config) |
-| Markdown       | `react-markdown` + `remark-gfm`                 |
-| PDF            | `@react-pdf/renderer@^4` + unified/remark       |
-| Runtime        | Node 20+                                        |
-| Package Mgmt   | npm                                             |
-| Linting        | ESLint 9 (flat config)                          |
-
-## Getting Started
+## Getting started
 
 ```bash
 cd zenith-cv
@@ -89,35 +87,34 @@ npm run dev
 
 Open http://localhost:3000.
 
-- On Chrome/Edge: Click **Connect Local CV Folder** and pick (or create) an empty directory for your `.md` files.
-- On other browsers: Use **Continue in Web Sandbox Mode** (or the demo templates).
+- Chrome/Edge: **Connect Local CV Folder** and pick (or create) a directory for `.md` files.
+- Other browsers: **Continue in Web Sandbox Mode**, or use a demo template.
 - Create, edit, rename, and **Download PDF**.
 
-## Example CV Snippet
+The Next.js app lives in the `zenith-cv/` folder. Run npm commands from there.
 
-```markdown
-# Alex Rivera
-**Senior Software Engineer** | San Francisco, CA
-alex.rivera@email.com · ...
+### Deploy
 
-## Summary
-...
+The live site is [https://cv.ldevia.dev/](https://cv.ldevia.dev/). To host your own copy on Vercel, set the **Root Directory** to `zenith-cv`. No environment variables are required.
 
-## Technical Skills
-**Languages:** TypeScript, Go, ...
-```
+## Privacy
 
-## Development Notes
+- No accounts, cookies for content, analytics, or application backend.
+- CV text is not copied into `localStorage` or IndexedDB.
+- Chrome/Edge may store a **directory handle** in IndexedDB so the last folder can be reopened. Disconnect deletes that handle.
+- Sandbox CVs live in tab memory and disappear on refresh.
+- The tailor panel holds a pasted job description in memory only.
 
-- All client components (`"use client"`).
-- `startTransition` used for state updates inside effects (ESLint 9 + React 19 rules).
-- Rename uses keyboard shortcuts (Enter/Escape) + optimistic updates.
-- Legacy `@media print` styles still present for browser print fallback.
+See [SECURITY.md](SECURITY.md) for how to report a vulnerability.
+
+## Contributing
+
+Issues and pull requests are welcome. The nested `AGENTS.md` files are architecture notes for AI-assisted development (storage, PDF, dashboard phases). They are not end-user docs; start with this README.
 
 ## License
 
-MIT (or your preferred license — add it here).
+[MIT](LICENSE) © 2026 Lorenzo Devia Rubio. Use it, modify it, ship it.
 
 ---
 
-Built for people who want their resumes to be **versionable, private, and portable**.
+Built for people who want their resumes **versionable, private, and portable**.

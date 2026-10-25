@@ -14,8 +14,23 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
+  metadataBase: new URL("https://cv.ldevia.dev"),
   title: "Zenith CV — Markdown Resume Builder",
   description: "A privacy-first, self-contained Markdown-to-PDF resume builder.",
+  openGraph: {
+    title: "Zenith CV — Markdown Resume Builder",
+    description: "A privacy-first, self-contained Markdown-to-PDF resume builder.",
+    url: "https://cv.ldevia.dev",
+    siteName: "Zenith CV",
+    images: [{ url: "/og.png", width: 1200, height: 630, alt: "Zenith CV editor with live Markdown preview" }],
+    type: "website",
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: "Zenith CV — Markdown Resume Builder",
+    description: "A privacy-first, self-contained Markdown-to-PDF resume builder.",
+    images: ["/og.png"],
+  },
 };
 
 export default function RootLayout({

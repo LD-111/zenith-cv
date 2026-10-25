@@ -59,6 +59,8 @@ Editor decides mode purely via `isVirtualId(rawId)` from virtual-store.
 - Folder handle is remembered in IndexedDB (permission re-requested). Disconnect forgets it.
 - Serif and compact Sans themes share `cv-theme.ts` tokens for preview CSS and PDF.
 - Snippet insert, hidden `target`/`notes` frontmatter, session-only tailor check, and a leave warning for undownloaded sandbox CVs.
+- Live demo: https://cv.ldevia.dev/. MIT license at repo root. CI: `.github/workflows/ci.yml` (lint + build).
+- `layout.tsx` sets `metadataBase` / Open Graph / Twitter against `https://cv.ldevia.dev` and `public/og.png`.
 
 See `src/app/AGENTS.md` and `src/lib/AGENTS.md` for details on implementation.
 

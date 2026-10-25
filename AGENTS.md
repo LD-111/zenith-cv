@@ -31,15 +31,22 @@ See `zenith-cv/package.json` for exact versions.
 ```
 c:\Projects\zenith-cv\
 ├── AGENTS.md                 ← YOU ARE HERE (root/meta)
-├── README.md
+├── README.md                 ← Public / recruiter-facing docs
+├── LICENSE                   ← MIT
+├── SECURITY.md
+├── .github/workflows/ci.yml  ← lint + build (working-directory: zenith-cv)
+├── docs/screenshots/         ← README images
 ├── zenith-cv/                ← The Next.js application (primary code)
 │   ├── AGENTS.md             ← App-level architecture, modes, features
+│   ├── public/og.png         ← Open Graph 1200×630
 │   ├── src/
 │   │   ├── lib/AGENTS.md     ← Core libs: FS, virtual store, PDF, templates, hooks
 │   │   └── app/AGENTS.md     ← UI: dashboard, editor, layout, CSS
 │   └── ...
 └── ...
 ```
+
+Live demo: https://cv.ldevia.dev/ (Vercel; root directory `zenith-cv`). License is MIT.
 
 ## Agent Memory Tree & Usage
 
@@ -94,7 +101,8 @@ When in doubt, update the file that would have been most useful to have read bef
 ## Other
 
 - The previous monolithic AGENTS.md was split (circa 2026-10) precisely to support scalable future agentic development.
-- AGENTS.md files are for AI consumption primarily; keep them technical, concise, accurate, and up-to-date.
+- AGENTS.md files are for AI consumption primarily; keep them technical, concise, accurate, and up-to-date. They are public and mentioned in the root README.
 - Always prefer actual source + tools over memory docs when implementing.
+- Public hygiene: keep `LICENSE` MIT, CI green, README privacy claims accurate (IndexedDB stores the directory handle only).
 
 For app-specific architecture and current feature status, proceed to `zenith-cv/AGENTS.md`.

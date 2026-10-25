@@ -105,7 +105,7 @@ Used by create modal and demo cards. Keep format compatible with the PDF rendere
 **"use client"** heavy module.
 
 - Dynamic-imported from editor.
-- Parses markdown with `unified` + `remark-parse` + `remark-gfm` → mdast.
+- Parses markdown with `unified` + `remark-parse` + `remark-gfm` → mdast. Those three are direct `package.json` dependencies.
 - Recursive walk to emit @react-pdf/renderer elements.
 - Supports headings, paragraphs, lists (ordered markers + one nested indent), links, tables, code (Courier), hr, blockquote, strong/em.
 - `downloadCVAsPDF(markdown, fileName, pageSize, themeId)` — `pageSize` is `"A4"` or `"LETTER"`. `themeId` is `"serif"` or `"sans"`. `buildPdfStyles` runs per call; the resulting `StyleSheet` is passed into `renderInline` / `renderList` / `renderBlock` so concurrent exports with different themes cannot clobber each other. Leading frontmatter is stripped before parse.

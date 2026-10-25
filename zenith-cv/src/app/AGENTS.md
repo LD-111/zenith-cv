@@ -11,7 +11,7 @@ All files are client components (`"use client"` at top of page.tsx files).
 
 ## File Map
 
-- `layout.tsx` — Root layout, Geist fonts (sans + mono), metadata, `LeaveGuard`, html/body. No analytics.
+- `layout.tsx` — Root layout, Geist fonts (sans + mono), `metadataBase` `https://cv.ldevia.dev`, Open Graph / Twitter (`public/og.png`), `LeaveGuard`, html/body. No analytics.
 - `leave-guard.tsx` — `beforeunload` when any sandbox CV has not had its `.md` downloaded since the last edit.
 - `globals.css` — Tailwind import + `.cv-*` prose styles for preview + legacy `@media print`.
 - `page.tsx` — Dashboard (1193 LOC): phases, file grids, modals, rename UI.

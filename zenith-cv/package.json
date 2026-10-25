@@ -2,6 +2,29 @@
   "name": "zenith-cv",
   "version": "0.1.0",
   "private": true,
+  "description": "Privacy-first, self-contained Markdown-to-PDF resume builder.",
+  "author": "Lorenzo Devia Rubio",
+  "license": "MIT",
+  "homepage": "https://cv.ldevia.dev/",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/LD-111/zenith-cv.git"
+  },
+  "bugs": {
+    "url": "https://github.com/LD-111/zenith-cv/issues"
+  },
+  "keywords": [
+    "resume",
+    "cv",
+    "markdown",
+    "pdf",
+    "nextjs",
+    "privacy",
+    "typescript"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
   "scripts": {
     "dev": "next dev",
     "build": "next build",
@@ -14,7 +37,9 @@
     "react": "19.2.4",
     "react-dom": "19.2.4",
     "react-markdown": "^10.1.0",
-    "remark-gfm": "^4.0.1"
+    "remark-gfm": "^4.0.1",
+    "remark-parse": "^11.0.0",
+    "unified": "^11.0.5"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4",
