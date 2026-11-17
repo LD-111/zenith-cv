@@ -108,9 +108,9 @@ Used by create modal and demo cards. Keep format compatible with the PDF rendere
 - Parses markdown with `unified` + `remark-parse` + `remark-gfm` → mdast. Those three are direct `package.json` dependencies.
 - Recursive walk to emit @react-pdf/renderer elements.
 - Supports headings, paragraphs, lists (ordered markers + one nested indent), links, tables, code (Courier), hr, blockquote, strong/em.
-- `downloadCVAsPDF(markdown, fileName, pageSize, themeId)` — `pageSize` is `"A4"` or `"LETTER"`. `themeId` is `"serif"` or `"sans"`. Palette keys in frontmatter are applied with `applyPalette` before `buildPdfStyles`. The resulting `StyleSheet` is passed into `renderInline` / `renderList` / `renderBlock` so concurrent exports with different themes cannot clobber each other. Leading frontmatter is stripped before parse. Link color is `theme.link`.
-- Page flow, margins, fonts (Times-Roman family to match Georgia in preview).
-- No print CSS path for export (separate from Ctrl+P).
+- `downloadCVAsPDF(markdown, fileName, pageSize, themeId)` — `pageSize` is `"A4"` or `"LETTER"`. `themeId` is one of `source-serif` (default), `eb-garamond`, `lora`, `source-sans`, `carlito`. Palette keys in frontmatter are applied with `applyPalette` before `buildPdfStyles`. The resulting `StyleSheet` is passed into `renderInline` / `renderList` / `renderBlock` so concurrent exports with different themes cannot clobber each other. Leading frontmatter is stripped before parse. Link color is `theme.link`.
+- On load, `Font.register` maps each family to the four OFL files in `public/fonts/` (regular, bold, italic, bold italic). Styles use `fontWeight` / `fontStyle` on that family. `##` is a `wrap={false}` view with a 1.5px rule above and below (`softRule`).
+- Page flow and margins: 16mm left/right, 14mm top/bottom. No print CSS path for export (separate from Ctrl+P).
 
 ## Cross-cutting
 
@@ -129,9 +129,9 @@ IndexedDB (`zenith-cv` / `handles` / `directory`) stores the directory handle on
 
 ### cv-theme.ts
 
-`SERIF_THEME` and `SANS_THEME`. `themeCssVars` drives preview CSS variables, including `--cv-link`. PDF `StyleSheet` is built from the same object. Module `getThemeId` / `setThemeId` survives client navigation, not disk. Sans is Helvetica, single column, no icons.
+`listThemes()` is the five CV faces. They share one layout (the former serif sizes and spacing). `previewFont` / `pdfFont` / `fontFiles` are the only per-face fields. `themeCssVars` drives preview CSS variables, including `--cv-link`. PDF `StyleSheet` is built from the same object. Module `getThemeId` / `setThemeId` survives client navigation, not disk. Default id is `source-serif`.
 
-`parseCssHex` accepts `#rgb` / `#rrggbb` and returns lowercase `#rrggbb`, or null. `applyPalette(theme, { primary, secondary, tertiary })` copies the theme and overrides only valid colors: primary → `heading` (H1, H3, bold), secondary → `accent` plus `softRule` mixed 80% toward white (H2 and its underline), tertiary → `link`. Empty strings leave the theme token.
+`parseCssHex` accepts `#rgb` / `#rrggbb` and returns lowercase `#rrggbb`, or null. `applyPalette(theme, { primary, secondary, tertiary })` copies the theme and overrides only valid colors: primary → `heading` (H1, H3, bold), secondary → `accent` plus `softRule` mixed 80% toward white (the rules above and below H2), tertiary → `link`. Empty strings leave the theme token.
 
 ### frontmatter.ts
 

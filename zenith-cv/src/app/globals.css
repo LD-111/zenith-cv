@@ -1,5 +1,146 @@
 @import "tailwindcss";
 
+@font-face {
+  font-family: "Source Serif 4";
+  src: url("/fonts/source-serif/SourceSerif4-Regular.ttf") format("truetype");
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: "Source Serif 4";
+  src: url("/fonts/source-serif/SourceSerif4-Bold.ttf") format("truetype");
+  font-weight: 700;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: "Source Serif 4";
+  src: url("/fonts/source-serif/SourceSerif4-Italic.ttf") format("truetype");
+  font-weight: 400;
+  font-style: italic;
+  font-display: swap;
+}
+@font-face {
+  font-family: "Source Serif 4";
+  src: url("/fonts/source-serif/SourceSerif4-BoldItalic.ttf") format("truetype");
+  font-weight: 700;
+  font-style: italic;
+  font-display: swap;
+}
+@font-face {
+  font-family: "EB Garamond";
+  src: url("/fonts/eb-garamond/EBGaramond-Regular.ttf") format("truetype");
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: "EB Garamond";
+  src: url("/fonts/eb-garamond/EBGaramond-Bold.ttf") format("truetype");
+  font-weight: 700;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: "EB Garamond";
+  src: url("/fonts/eb-garamond/EBGaramond-Italic.ttf") format("truetype");
+  font-weight: 400;
+  font-style: italic;
+  font-display: swap;
+}
+@font-face {
+  font-family: "EB Garamond";
+  src: url("/fonts/eb-garamond/EBGaramond-BoldItalic.ttf") format("truetype");
+  font-weight: 700;
+  font-style: italic;
+  font-display: swap;
+}
+@font-face {
+  font-family: "Lora";
+  src: url("/fonts/lora/Lora-Regular.ttf") format("truetype");
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: "Lora";
+  src: url("/fonts/lora/Lora-Bold.ttf") format("truetype");
+  font-weight: 700;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: "Lora";
+  src: url("/fonts/lora/Lora-Italic.ttf") format("truetype");
+  font-weight: 400;
+  font-style: italic;
+  font-display: swap;
+}
+@font-face {
+  font-family: "Lora";
+  src: url("/fonts/lora/Lora-BoldItalic.ttf") format("truetype");
+  font-weight: 700;
+  font-style: italic;
+  font-display: swap;
+}
+@font-face {
+  font-family: "Source Sans 3";
+  src: url("/fonts/source-sans/SourceSans3-Regular.ttf") format("truetype");
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: "Source Sans 3";
+  src: url("/fonts/source-sans/SourceSans3-Bold.ttf") format("truetype");
+  font-weight: 700;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: "Source Sans 3";
+  src: url("/fonts/source-sans/SourceSans3-Italic.ttf") format("truetype");
+  font-weight: 400;
+  font-style: italic;
+  font-display: swap;
+}
+@font-face {
+  font-family: "Source Sans 3";
+  src: url("/fonts/source-sans/SourceSans3-BoldItalic.ttf") format("truetype");
+  font-weight: 700;
+  font-style: italic;
+  font-display: swap;
+}
+@font-face {
+  font-family: "Carlito";
+  src: url("/fonts/carlito/Carlito-Regular.ttf") format("truetype");
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: "Carlito";
+  src: url("/fonts/carlito/Carlito-Bold.ttf") format("truetype");
+  font-weight: 700;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: "Carlito";
+  src: url("/fonts/carlito/Carlito-Italic.ttf") format("truetype");
+  font-weight: 400;
+  font-style: italic;
+  font-display: swap;
+}
+@font-face {
+  font-family: "Carlito";
+  src: url("/fonts/carlito/Carlito-BoldItalic.ttf") format("truetype");
+  font-weight: 700;
+  font-style: italic;
+  font-display: swap;
+}
+
 :root {
   --background: #ffffff;
   --foreground: #171717;
@@ -22,9 +163,10 @@ body {
 
 .cv-content {
   color: var(--cv-color, #1a1a1a);
-  font-family: var(--cv-font, "Georgia", "Times New Roman", serif);
+  font-family: var(--cv-font, "Source Serif 4", serif);
   font-size: var(--cv-size, 10.5pt);
   line-height: var(--cv-leading, 1.55);
+  font-synthesis: none;
 }
 
 .cv-h1 {
@@ -44,7 +186,9 @@ body {
   letter-spacing: var(--cv-h2-track, 0.12em);
   margin-top: var(--cv-h2-top, 18px);
   margin-bottom: 6px;
+  padding-top: 3px;
   padding-bottom: 3px;
+  border-top: 1.5px solid var(--cv-soft-rule, #e0e7ff);
   border-bottom: 1.5px solid var(--cv-soft-rule, #e0e7ff);
 }
 
@@ -182,7 +326,7 @@ body {
 
   @page {
     size: A4 portrait;
-    margin: 14mm 16mm;
+    margin: 0;
   }
 
   /* Hide everything except the CV preview */
@@ -198,6 +342,7 @@ body {
     width: 100% !important;
     overflow: visible !important;
     border: none !important;
+    background: #ffffff !important;
   }
 
   /* Remove the screen-only wrapper chrome */
@@ -205,26 +350,56 @@ body {
     display: none !important;
   }
 
-  /* The article itself gets full width with no extra padding */
+  .cv-measurer,
+  .cv-page-gap {
+    display: none !important;
+  }
+
   .cv-content {
-    max-width: 100% !important;
+    max-width: none !important;
     box-shadow: none !important;
     padding: 0 !important;
-    margin: 0 !important;
     min-height: 0 !important;
   }
 
-  /* Section that wraps the article */
   #cv-preview > div.flex-1 {
     padding: 0 !important;
+    overflow: visible !important;
+    background: #ffffff !important;
   }
 
-  article {
-    max-width: 100% !important;
+  .cv-sheet-frame {
+    width: auto !important;
+    height: auto !important;
+    margin: 0 !important;
+  }
+
+  .cv-sheet {
+    position: static !important;
+    transform: none !important;
+    width: 210mm !important;
+    height: 297mm !important;
+    max-width: none !important;
     min-height: 0 !important;
     box-shadow: none !important;
-    padding: 0 !important;
     margin: 0 !important;
+    overflow: hidden !important;
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+
+  #cv-preview.cv-letter .cv-sheet {
+    width: 215.9mm !important;
+    height: 279.4mm !important;
+  }
+
+  .cv-sheet-clip {
+    overflow: hidden !important;
+    height: 269mm !important;
+  }
+
+  #cv-preview.cv-letter .cv-sheet-clip {
+    height: 251.4mm !important;
   }
 
   /* Prevent orphaned headings at page breaks */

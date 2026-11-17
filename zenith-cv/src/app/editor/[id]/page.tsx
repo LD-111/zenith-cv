@@ -7,13 +7,8 @@ import {
   useMemo,
   useRef,
   startTransition,
-  isValidElement,
-  cloneElement,
-  Fragment,
 } from "react";
 import { useParams, useRouter } from "next/navigation";
-import ReactMarkdown from "react-markdown";
-import remarkGfm from "remark-gfm";
 import {
   getDirectoryHandle,
   readMdFile,
@@ -33,7 +28,8 @@ import {
   createVirtualCV,
   markVirtualDownloaded,
 } from "@/lib/virtual-store";
-import { applyPalette, getTheme, getThemeId, setThemeId, themeCssVars, type ThemeId } from "@/lib/cv-theme";
+import { applyPalette, getTheme, getThemeId, listThemes, setThemeId, themeCssVars, type ThemeId } from "@/lib/cv-theme";
+import { CvPreview } from "@/app/editor/cv-preview";
 import { setPalette, splitFrontmatter } from "@/lib/frontmatter";
 import { SNIPPETS } from "@/lib/snippets";
 import { analyzeTailor } from "@/lib/tailor";
@@ -46,34 +42,6 @@ type PageSize = "A4" | "LETTER";
 
 function escapeRegExp(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-}
-
-function highlightNode(node: React.ReactNode, pattern: RegExp | null): React.ReactNode {
-  if (!pattern) return node;
-  if (typeof node === "string") {
-    const parts = node.split(pattern);
-    if (parts.length === 1) return node;
-    return parts.map((part, i) =>
-      i % 2 === 1 ? <mark key={i} className="cv-mark">{part}</mark> : part
-    );
-  }
-  if (Array.isArray(node)) {
-    return node.map((child, i) => <Fragment key={i}>{highlightNode(child, pattern)}</Fragment>);
-  }
-  if (isValidElement<{ children?: React.ReactNode }>(node) && node.props.children != null) {
-    return cloneElement(node, undefined, highlightNode(node.props.children, pattern));
-  }
-  return node;
-}
-
-function contentLimitPx(size: PageSize): number {
-  const mm = size === "LETTER" ? 251.4 : 269;
-  const probe = document.createElement("div");
-  probe.style.cssText = `position:absolute;visibility:hidden;height:${mm}mm;width:0;pointer-events:none;`;
-  document.body.appendChild(probe);
-  const px = probe.getBoundingClientRect().height;
-  probe.remove();
-  return px;
 }
 
 export default function EditorPage() {
@@ -110,7 +78,6 @@ export default function EditorPage() {
   const [insertOpen, setInsertOpen] = useState(false);
   const [tailorOpen, setTailorOpen] = useState(false);
   const [jobText, setJobText] = useState("");
-  const previewContentRef = useRef<HTMLDivElement>(null);
   const editorRef = useRef<HTMLTextAreaElement>(null);
   const theme = getTheme(themeId);
   const meta = splitFrontmatter(markdown);
@@ -314,21 +281,9 @@ export default function EditorPage() {
     return () => window.removeEventListener("keydown", onKey);
   }, [loadState, flushSave, handleDownloadPDF]);
 
-  useEffect(() => {
-    if (loadState !== "ready") return;
-    const el = previewContentRef.current;
-    if (!el) return;
-    const measure = () => {
-      const limit = contentLimitPx(pageSize);
-      const height = el.scrollHeight;
-      const pages = height <= limit + 2 ? 1 : Math.max(1, Math.ceil(height / Math.max(limit, 1)));
-      startTransition(() => setPageCount(pages));
-    };
-    measure();
-    const observer = new ResizeObserver(measure);
-    observer.observe(el);
-    return () => observer.disconnect();
-  }, [loadState, markdown, pageSize]);
+  const reportPageCount = useCallback((count: number) => {
+    startTransition(() => setPageCount(count));
+  }, []);
 
   const insertSnippet = useCallback((body: string) => {
     const el = editorRef.current;
@@ -766,7 +721,7 @@ export default function EditorPage() {
         </section>
 
         <section
-          className="flex flex-col w-1/2 overflow-auto bg-white print:w-full print:overflow-visible"
+          className={`flex min-h-0 flex-col w-1/2 overflow-hidden bg-neutral-200 print:w-full print:overflow-visible print:bg-white ${pageSize === "LETTER" ? "cv-letter" : ""}`}
           aria-label="CV Preview"
           id="cv-preview"
         >
@@ -809,25 +764,23 @@ export default function EditorPage() {
                   </button>
                 )}
               </div>
-              <div className="flex rounded-md border border-neutral-200 overflow-hidden">
-                {(["serif", "sans"] as const).map((id) => (
-                  <button
-                    key={id}
-                    type="button"
-                    onClick={() => {
-                      setThemeId(id);
-                      setTheme(id);
-                    }}
-                    className={`px-2 py-0.5 text-[10px] font-mono ${
-                      themeId === id
-                        ? "bg-neutral-900 text-white"
-                        : "bg-white text-neutral-500 hover:text-neutral-800"
-                    }`}
-                  >
-                    {id === "serif" ? "Serif" : "Sans"}
-                  </button>
+              <select
+                aria-label="Font"
+                value={themeId}
+                onChange={(e) => {
+                  const id = e.target.value as ThemeId;
+                  setThemeId(id);
+                  setTheme(id);
+                }}
+                className="max-w-[9.5rem] rounded-md border border-neutral-200 bg-white px-1.5 py-0.5 text-[10px] text-neutral-700"
+                style={{ fontFamily: theme.previewFont }}
+              >
+                {listThemes().map((item) => (
+                  <option key={item.id} value={item.id} style={{ fontFamily: item.previewFont }}>
+                    {item.label}
+                  </option>
                 ))}
-              </div>
+              </select>
               <div className="flex rounded-md border border-neutral-200 overflow-hidden">
                 {(["A4", "LETTER"] as const).map((size) => (
                   <button
@@ -844,8 +797,8 @@ export default function EditorPage() {
                   </button>
                 ))}
               </div>
-              <span className={`text-[10px] font-mono ${pageCount > 1 ? "text-amber-600" : "text-neutral-400"}`}>
-                {pageCount === 1 ? "1 page" : `${pageCount} pages · overflows`}
+              <span className="text-[10px] font-mono text-neutral-400">
+                {pageCount === 1 ? "1 page" : `${pageCount} pages`}
               </span>
               {(meta.target || meta.notes) && (
                 <span className="text-[10px] font-mono text-neutral-400 truncate max-w-[180px]" title="Stripped from preview and PDF">
@@ -855,42 +808,13 @@ export default function EditorPage() {
             </div>
           </div>
 
-          <div className="flex-1 p-8 print:p-0">
-            <article
-              className={`cv-content mx-auto w-full bg-white px-[16mm] py-[14mm] shadow-sm print:shadow-none print:max-w-none print:min-h-0 print:px-0 print:py-0 ${pageSize === "LETTER" ? "max-w-[215.9mm] min-h-[279.4mm]" : "max-w-[210mm] min-h-[297mm]"}`}
-              style={themeCssVars(previewTheme)}
-            >
-              <div ref={previewContentRef}>
-              <ReactMarkdown
-                remarkPlugins={[remarkGfm]}
-                components={{
-                  h1: ({ children }) => <h1 className="cv-h1">{highlightNode(children, highlightPattern)}</h1>,
-                  h2: ({ children }) => <h2 className="cv-h2">{highlightNode(children, highlightPattern)}</h2>,
-                  h3: ({ children }) => <h3 className="cv-h3">{highlightNode(children, highlightPattern)}</h3>,
-                  p: ({ children }) => <p className="cv-p">{highlightNode(children, highlightPattern)}</p>,
-                  ul: ({ children }) => <ul className="cv-ul">{children}</ul>,
-                  ol: ({ children }) => <ol className="cv-ol">{children}</ol>,
-                  li: ({ children }) => <li className="cv-li">{highlightNode(children, highlightPattern)}</li>,
-                  strong: ({ children }) => <strong className="cv-strong">{children}</strong>,
-                  em: ({ children }) => <em className="cv-em">{children}</em>,
-                  a: ({ href, children }) => (
-                    <a href={href} className="cv-a" target="_blank" rel="noopener noreferrer">
-                      {children}
-                    </a>
-                  ),
-                  hr: () => <hr className="cv-hr" />,
-                  code: ({ children }) => <code className="cv-code">{children}</code>,
-                  blockquote: ({ children }) => <blockquote className="cv-blockquote">{children}</blockquote>,
-                  table: ({ children }) => <table className="cv-table">{children}</table>,
-                  th: ({ children }) => <th className="cv-th">{children}</th>,
-                  td: ({ children }) => <td className="cv-td">{children}</td>,
-                }}
-              >
-                {meta.body}
-              </ReactMarkdown>
-              </div>
-            </article>
-          </div>
+          <CvPreview
+            pageSize={pageSize}
+            cssVars={themeCssVars(previewTheme)}
+            body={meta.body}
+            highlightPattern={highlightPattern}
+            onPageCount={reportPageCount}
+          />
         </section>
       </div>
     </div>

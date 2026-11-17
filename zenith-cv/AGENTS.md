@@ -53,11 +53,11 @@ Editor decides mode purely via `isVirtualId(rawId)` from virtual-store.
 - Inline rename from dashboard cards and editor toolbar (Enter/Esc, validation, duplicate checks).
 - Mode badges and escape hatches in both directions.
 - Download `.md` from the editor (sandbox persist path). Duplicate creates a `-copy` slug and opens it.
-- Editor: A4/Letter export, page-budget indicator, spellcheck toggle, `Ctrl+S` flush and `Ctrl+E` PDF (shown in the editor chrome).
+- Editor: A4/Letter export, multi-page preview sheets with a page count, spellcheck toggle, `Ctrl+S` flush and `Ctrl+E` PDF (shown in the editor chrome).
 - Dashboard name filter. Ordered lists and one nested level in the PDF.
 - No analytics. Privacy claim matches the build.
 - Folder handle is remembered in IndexedDB (permission re-requested). Disconnect forgets it.
-- Serif and compact Sans themes share `cv-theme.ts` tokens for preview CSS and PDF. Per-CV `primary` / `secondary` / `tertiary` frontmatter overrides title, section, and link colors in both.
+- Five bundled CV fonts (Source Serif, EB Garamond, Lora, Source Sans, Carlito) share one `cv-theme.ts` layout for preview CSS and PDF. Per-CV `primary` / `secondary` / `tertiary` frontmatter overrides title, section, and link colors in both.
 - Snippet insert, hidden `target`/`notes` frontmatter, session-only tailor check, and a leave warning for undownloaded sandbox CVs.
 - Live demo: https://cv.ldevia.dev/. MIT license at repo root. CI: `.github/workflows/ci.yml` (lint + build).
 - `layout.tsx` sets `metadataBase` / Open Graph / Twitter against `https://cv.ldevia.dev` and `public/og.png`.

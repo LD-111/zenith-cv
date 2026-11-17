@@ -42,9 +42,9 @@ Derives `initialFileName` and initial virtual name from store or slug.
 ### Other Actions
 - Back: flush save immediately, then push("/").
 - Load .md: replaces markdown (triggers autosave).
-- Export PDF: dynamic import pdf-export, `downloadCVAsPDF(markdown, fileName, pageSize, themeId)`. Spinner state. A4 or Letter, Serif or Sans, from the preview header. Frontmatter is stripped inside the exporter after `primary` / `secondary` / `tertiary` are applied to the theme.
-- Preview renders `splitFrontmatter(markdown).body` with `themeCssVars(applyPalette(theme, meta))`. Article is `w-full` with `max-w` of the selected page (210mm A4 / 215.9mm Letter) so the card shrinks on narrow panes instead of overflowing. Page budget follows the rendered wrap.
-- Preview header color inputs (Primary, Secondary, Tertiary) call `setPalette` and the existing markdown setter, so autosave writes them into frontmatter. Reset clears all three keys. Unset roles keep the Serif or Sans default. Pickers show the effective color.
+- Export PDF: dynamic import pdf-export, `downloadCVAsPDF(markdown, fileName, pageSize, themeId)`. Spinner state. A4 or Letter, and one of the five font ids, from the preview header. Frontmatter is stripped inside the exporter after `primary` / `secondary` / `tertiary` are applied to the theme.
+- Preview is `CvPreview` (`editor/cv-preview.tsx`). It renders `splitFrontmatter(markdown).body` with `themeCssVars(applyPalette(theme, meta))` into fixed page sheets. A hidden measurer at the content width (page width minus 32mm) packs top-level blocks. Each sheet clips to the content box (269mm A4, 251.4mm Letter) and `transform: scale()` fits the pane without reflowing. The header count is the sheet count: `1 page` or `N pages`.
+- Preview header color inputs (Primary, Secondary, Tertiary) call `setPalette` and the existing markdown setter, so autosave writes them into frontmatter. Reset clears all three keys. Unset roles keep the shared document colors. The font `<select>` calls `setThemeId`. Pickers show the effective color.
 - Insert menu writes a snippet at the textarea selection.
 - Tailor panel holds a job description in component state only. Overlap terms are `<mark>`ed in the preview. PDF export does not include marks.
 - Download `.md` in virtual mode calls `markVirtualDownloaded`.
@@ -52,7 +52,7 @@ Derives `initialFileName` and initial virtual name from store or slug.
 - Duplicate: `allocateCopySlug`, write/create, then `router.push` the copy.
 - Shortcuts: `Ctrl+S` / `⌘S` calls `flushSave`. `Ctrl+E` / `⌘E` calls PDF export. Labeled in the editor pane chrome and on the PDF button title.
 - Spellcheck toggle on the textarea (default off).
-- Page budget: `ResizeObserver` on preview content vs content-box height (269mm A4, 251.4mm Letter). Shows `1 page` or `N pages · overflows`.
+- Page breaks: `ResizeObserver` on the measurer and the pane. A block that fits moves whole, so a `##` is not sliced. A block taller than the content box continues on the next sheet. A small page index is rendered in each gap.
 
 ### UI Layout
 - Fixed toolbar (back, name+rename, status, duplicate, download .md, load, export). Shortcut legend in the editor pane header.

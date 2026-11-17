@@ -20,6 +20,7 @@ src/
     ├── globals.css
     ├── page.tsx (Dashboard)
     └── editor/
+        ├── cv-preview.tsx (page sheets)
         └── [id]/page.tsx (Editor)
             (see editor/AGENTS.md)
 ```

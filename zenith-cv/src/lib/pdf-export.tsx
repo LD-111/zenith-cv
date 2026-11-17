@@ -6,6 +6,7 @@ import {
   View,
   Link,
   StyleSheet,
+  Font,
   pdf,
 } from "@react-pdf/renderer";
 import { unified } from "unified";
@@ -26,8 +27,20 @@ import type {
   TableRow,
   TableCell,
 } from "mdast";
-import { applyPalette, getTheme, type ThemeId, type CvTheme } from "@/lib/cv-theme";
+import { applyPalette, getTheme, listThemes, type ThemeId, type CvTheme } from "@/lib/cv-theme";
 import { splitFrontmatter } from "@/lib/frontmatter";
+
+for (const face of listThemes()) {
+  Font.register({
+    family: face.pdfFont,
+    fonts: [
+      { src: face.fontFiles.regular, fontWeight: 400 },
+      { src: face.fontFiles.bold, fontWeight: 700 },
+      { src: face.fontFiles.italic, fontWeight: 400, fontStyle: "italic" },
+      { src: face.fontFiles.boldItalic, fontWeight: 700, fontStyle: "italic" },
+    ],
+  });
+}
 
 function buildPdfStyles(theme: CvTheme) {
   return StyleSheet.create({
@@ -43,7 +56,8 @@ function buildPdfStyles(theme: CvTheme) {
   },
   h1: {
     fontSize: theme.h1Size,
-    fontFamily: theme.pdfFontBold,
+    fontFamily: theme.pdfFont,
+    fontWeight: 700,
     color: theme.heading,
     letterSpacing: theme.h1TrackingEm * theme.h1Size,
     marginBottom: 1,
@@ -52,21 +66,27 @@ function buildPdfStyles(theme: CvTheme) {
   h2Wrap: {
     marginTop: theme.h2MarginTop * 0.55,
     marginBottom: 3,
+    paddingTop: 2,
     paddingBottom: 2,
+    borderTopWidth: 1.5,
+    borderTopColor: theme.softRule,
+    borderTopStyle: "solid",
     borderBottomWidth: 1.5,
     borderBottomColor: theme.softRule,
     borderBottomStyle: "solid",
   },
   h2: {
     fontSize: theme.h2Size,
-    fontFamily: theme.pdfFontBold,
+    fontFamily: theme.pdfFont,
+    fontWeight: 700,
     color: theme.accent,
     textTransform: "uppercase",
     letterSpacing: theme.h2TrackingEm * theme.h2Size,
   },
   h3: {
     fontSize: theme.h3Size,
-    fontFamily: theme.pdfFontBold,
+    fontFamily: theme.pdfFont,
+    fontWeight: 700,
     color: theme.heading,
     marginTop: theme.h3MarginTop * 0.6,
     marginBottom: 0,
@@ -105,11 +125,13 @@ function buildPdfStyles(theme: CvTheme) {
     textAlign: "justify",
   },
   strong: {
-    fontFamily: theme.pdfFontBold,
+    fontFamily: theme.pdfFont,
+    fontWeight: 700,
     color: theme.heading,
   },
   em: {
-    fontFamily: theme.pdfFontItalic,
+    fontFamily: theme.pdfFont,
+    fontStyle: "italic",
     color: theme.muted,
     fontSize: theme.emSize,
   },
@@ -136,7 +158,8 @@ function buildPdfStyles(theme: CvTheme) {
     marginBottom: 4,
   },
   blockquoteText: {
-    fontFamily: theme.pdfFontItalic,
+    fontFamily: theme.pdfFont,
+    fontStyle: "italic",
     color: theme.muted,
     textAlign: "justify",
   },
@@ -179,7 +202,8 @@ function buildPdfStyles(theme: CvTheme) {
     paddingHorizontal: 6,
     color: "#374151",
     fontSize: 9.5,
-    fontFamily: theme.pdfFontBold,
+    fontFamily: theme.pdfFont,
+    fontWeight: 700,
   },
   });
 }
@@ -378,7 +402,7 @@ export async function downloadCVAsPDF(
   markdown: string,
   fileName: string,
   pageSize: PdfPageSize = "A4",
-  themeId: ThemeId = "serif"
+  themeId: ThemeId = "source-serif"
 ): Promise<void> {
   const frontmatter = splitFrontmatter(markdown);
   const styles = buildPdfStyles(applyPalette(getTheme(themeId), frontmatter));

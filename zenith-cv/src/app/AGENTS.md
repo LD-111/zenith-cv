@@ -15,7 +15,8 @@ All files are client components (`"use client"` at top of page.tsx files).
 - `leave-guard.tsx` — `beforeunload` when any sandbox CV has not had its `.md` downloaded since the last edit.
 - `globals.css` — Tailwind import + `.cv-*` prose styles for preview + legacy `@media print`.
 - `page.tsx` — Dashboard (1193 LOC): phases, file grids, modals, rename UI.
-- `editor/[id]/page.tsx` — Editor (537 LOC): split view, autosave, rename, PDF export, load .md.
+- `editor/[id]/page.tsx` — Editor: split view, autosave, rename, PDF export, load .md.
+- `editor/cv-preview.tsx` — Scaled A4/Letter sheets for the live preview.
 
 ## Dashboard (`page.tsx`)
 
@@ -76,7 +77,7 @@ const mode: EditorMode = isVirtualId(rawId) ? "virtual" : "local";
 - Mode badge.
 
 **Preview**:
-- Right pane: ReactMarkdown + remarkGfm, wrapped in a light page card (`.cv-content`) that is `w-full` with `max-w` of A4/Letter so it does not overflow the pane.
+- Right pane: `CvPreview` renders the body once per sheet at the PDF page size (A4 210×297mm, Letter 215.9×279.4mm, padding 16mm/14mm). Sheets scale down to the pane. A page index sits in each gap. The header reads `1 page` or `N pages`.
 - Editor textarea left, mono, full height.
 
 **Refs & effects** careful to avoid stale closures and satisfy ESLint.
@@ -84,10 +85,10 @@ const mode: EditorMode = isVirtualId(rawId) ? "virtual" : "local";
 ## Styling (`globals.css`)
 
 - Imports tailwind.
-- `.cv-*` : h1–h3 sizes/weights, p, ul, li, a, hr, strong, em, code (font + bg), pre, blockquote, table (border, thead, td padding), etc.
+- `@font-face` for the five bundled families in `public/fonts/`, then `.cv-*` prose: h1–h3, p, ul, li, a, hr, strong, em, code, pre, blockquote, table.
+- `.cv-h2` draws a 1.5px rule above and below the label (`--cv-soft-rule`).
 - Colors come from `cv-theme` tokens (`--cv-heading`, `--cv-accent`, `--cv-link`, `--cv-soft-rule`). A per-CV palette can override them.
-- Preview stays light even in dark app.
-- Legacy print rules retained (may be removed later).
+- Preview sheet stack sits on a neutral pane; each sheet stays white. Print lays each `.cv-sheet` out at full page size with `@page` margin 0.
 
 ## Layout & Fonts
 
@@ -109,6 +110,6 @@ Analytics removed. Do not reintroduce a tracker.
 - PDF button only in editor. Page size (A4/Letter) is chosen in the preview header and passed to `downloadCVAsPDF`.
 - Shortcuts are labeled in the editor pane chrome: `Ctrl+S` flushes save, `Ctrl+E` exports PDF. `metaKey` is also accepted.
 - Download `.md` writes the current buffer. Duplicate allocates `name-copy` / `name-copy-N` and navigates to it.
-- Page budget measures preview content height against the selected page's content box (page height minus 28mm padding).
+- Page count is the number of preview sheets. Breaks are between top-level blocks measured at the PDF content width; a block taller than one content box continues on the next sheet.
 
 Update this AGENTS.md (and parents) after modifying dashboard or editor behavior, adding UI features, or changing CSS.

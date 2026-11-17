@@ -1,12 +1,18 @@
-export type ThemeId = "serif" | "sans";
+export type ThemeId = "source-serif" | "eb-garamond" | "lora" | "source-sans" | "carlito";
+
+export interface ThemeFontFiles {
+  regular: string;
+  bold: string;
+  italic: string;
+  boldItalic: string;
+}
 
 export interface CvTheme {
   id: ThemeId;
   label: string;
   previewFont: string;
   pdfFont: string;
-  pdfFontBold: string;
-  pdfFontItalic: string;
+  fontFiles: ThemeFontFiles;
   fontSize: number;
   lineHeight: number;
   color: string;
@@ -27,13 +33,7 @@ export interface CvTheme {
   emSize: number;
 }
 
-export const SERIF_THEME: CvTheme = {
-  id: "serif",
-  label: "Serif",
-  previewFont: '"Georgia", "Times New Roman", serif',
-  pdfFont: "Times-Roman",
-  pdfFontBold: "Times-Bold",
-  pdfFontItalic: "Times-Italic",
+const DOCUMENT_LAYOUT: Omit<CvTheme, "id" | "label" | "previewFont" | "pdfFont" | "fontFiles"> = {
   fontSize: 10.5,
   lineHeight: 1.55,
   color: "#1a1a1a",
@@ -54,50 +54,114 @@ export const SERIF_THEME: CvTheme = {
   emSize: 9.5,
 };
 
-export const SANS_THEME: CvTheme = {
-  id: "sans",
-  label: "Sans",
-  previewFont: "Helvetica, Arial, sans-serif",
-  pdfFont: "Helvetica",
-  pdfFontBold: "Helvetica-Bold",
-  pdfFontItalic: "Helvetica-Oblique",
-  fontSize: 10,
-  lineHeight: 1.35,
-  color: "#1a1a1a",
-  heading: "#111827",
-  muted: "#4b5563",
-  accent: "#1e3a5f",
-  link: "#1e3a5f",
-  rule: "#d4d4d4",
-  softRule: "#e5e7eb",
-  h1Size: 16,
-  h2Size: 9,
-  h3Size: 10.5,
-  h1TrackingEm: -0.01,
-  h2TrackingEm: 0.08,
-  h2MarginTop: 10,
-  h3MarginTop: 7,
-  pMarginBottom: 3,
-  emSize: 9.5,
-};
+interface FontFace {
+  id: ThemeId;
+  label: string;
+  family: string;
+  fallback: "serif" | "sans-serif";
+  files: ThemeFontFiles;
+}
+
+const FACES: FontFace[] = [
+  {
+    id: "source-serif",
+    label: "Source Serif",
+    family: "Source Serif 4",
+    fallback: "serif",
+    files: {
+      regular: "/fonts/source-serif/SourceSerif4-Regular.ttf",
+      bold: "/fonts/source-serif/SourceSerif4-Bold.ttf",
+      italic: "/fonts/source-serif/SourceSerif4-Italic.ttf",
+      boldItalic: "/fonts/source-serif/SourceSerif4-BoldItalic.ttf",
+    },
+  },
+  {
+    id: "eb-garamond",
+    label: "EB Garamond",
+    family: "EB Garamond",
+    fallback: "serif",
+    files: {
+      regular: "/fonts/eb-garamond/EBGaramond-Regular.ttf",
+      bold: "/fonts/eb-garamond/EBGaramond-Bold.ttf",
+      italic: "/fonts/eb-garamond/EBGaramond-Italic.ttf",
+      boldItalic: "/fonts/eb-garamond/EBGaramond-BoldItalic.ttf",
+    },
+  },
+  {
+    id: "lora",
+    label: "Lora",
+    family: "Lora",
+    fallback: "serif",
+    files: {
+      regular: "/fonts/lora/Lora-Regular.ttf",
+      bold: "/fonts/lora/Lora-Bold.ttf",
+      italic: "/fonts/lora/Lora-Italic.ttf",
+      boldItalic: "/fonts/lora/Lora-BoldItalic.ttf",
+    },
+  },
+  {
+    id: "source-sans",
+    label: "Source Sans",
+    family: "Source Sans 3",
+    fallback: "sans-serif",
+    files: {
+      regular: "/fonts/source-sans/SourceSans3-Regular.ttf",
+      bold: "/fonts/source-sans/SourceSans3-Bold.ttf",
+      italic: "/fonts/source-sans/SourceSans3-Italic.ttf",
+      boldItalic: "/fonts/source-sans/SourceSans3-BoldItalic.ttf",
+    },
+  },
+  {
+    id: "carlito",
+    label: "Carlito",
+    family: "Carlito",
+    fallback: "sans-serif",
+    files: {
+      regular: "/fonts/carlito/Carlito-Regular.ttf",
+      bold: "/fonts/carlito/Carlito-Bold.ttf",
+      italic: "/fonts/carlito/Carlito-Italic.ttf",
+      boldItalic: "/fonts/carlito/Carlito-BoldItalic.ttf",
+    },
+  },
+];
+
+function buildTheme(face: FontFace): CvTheme {
+  return {
+    ...DOCUMENT_LAYOUT,
+    id: face.id,
+    label: face.label,
+    previewFont: `"${face.family}", ${face.fallback}`,
+    pdfFont: face.family,
+    fontFiles: face.files,
+  };
+}
 
 const THEMES: Record<ThemeId, CvTheme> = {
-  serif: SERIF_THEME,
-  sans: SANS_THEME,
+  "source-serif": buildTheme(FACES[0]),
+  "eb-garamond": buildTheme(FACES[1]),
+  lora: buildTheme(FACES[2]),
+  "source-sans": buildTheme(FACES[3]),
+  carlito: buildTheme(FACES[4]),
 };
 
-let _themeId: ThemeId = "serif";
+const DEFAULT_THEME_ID: ThemeId = "source-serif";
+
+let _themeId: ThemeId = DEFAULT_THEME_ID;
+
+export function listThemes(): CvTheme[] {
+  return FACES.map((face) => THEMES[face.id]);
+}
 
 export function getThemeId(): ThemeId {
   return _themeId;
 }
 
 export function setThemeId(id: ThemeId): void {
-  _themeId = id;
+  if (THEMES[id]) _themeId = id;
 }
 
 export function getTheme(id: ThemeId = _themeId): CvTheme {
-  return THEMES[id];
+  return THEMES[id] ?? THEMES[DEFAULT_THEME_ID];
 }
 
 export function themeCssVars(theme: CvTheme): Record<string, string> {
