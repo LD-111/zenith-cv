@@ -53,7 +53,7 @@ Editor decides mode purely via `isVirtualId(rawId)` from virtual-store.
 - Inline rename from dashboard cards and editor toolbar (Enter/Esc, validation, duplicate checks).
 - Mode badges and escape hatches in both directions.
 - Download `.md` from the editor (sandbox persist path). Duplicate creates a `-copy` slug and opens it.
-- Editor: A4/Letter export, multi-page preview sheets with a page count, spellcheck toggle, `Ctrl+S` flush and `Ctrl+E` PDF (shown in the editor chrome).
+- Editor: A4/Letter export, multi-page preview sheets with a page count, spellcheck toggle, `Ctrl+S` flush and `Ctrl+E` PDF (shown in the editor chrome). Headings stay with the following lines in the preview and the PDF.
 - Dashboard name filter. Ordered lists and one nested level in the PDF.
 - No analytics. Privacy claim matches the build.
 - Folder handle is remembered in IndexedDB (permission re-requested). Disconnect forgets it.

@@ -395,11 +395,6 @@ body {
 
   .cv-sheet-clip {
     overflow: hidden !important;
-    height: 269mm !important;
-  }
-
-  #cv-preview.cv-letter .cv-sheet-clip {
-    height: 251.4mm !important;
   }
 
   /* Prevent orphaned headings at page breaks */

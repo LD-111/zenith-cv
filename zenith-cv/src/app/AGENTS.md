@@ -77,7 +77,7 @@ const mode: EditorMode = isVirtualId(rawId) ? "virtual" : "local";
 - Mode badge.
 
 **Preview**:
-- Right pane: `CvPreview` renders the body once per sheet at the PDF page size (A4 210×297mm, Letter 215.9×279.4mm, padding 16mm/14mm). Sheets scale down to the pane. A page index sits in each gap. The header reads `1 page` or `N pages`.
+- Right pane: `CvPreview` renders the body once per sheet at the PDF page size (A4 210×297mm, Letter 215.9×279.4mm, padding 16mm/14mm). Sheets scale down to the pane. A page index sits in each gap. The header reads `1 page` or `N pages`. A heading that would end a sheet with less than two body lines of the next block starts the next sheet instead.
 - Editor textarea left, mono, full height.
 
 **Refs & effects** careful to avoid stale closures and satisfy ESLint.
@@ -110,6 +110,6 @@ Analytics removed. Do not reintroduce a tracker.
 - PDF button only in editor. Page size (A4/Letter) is chosen in the preview header and passed to `downloadCVAsPDF`.
 - Shortcuts are labeled in the editor pane chrome: `Ctrl+S` flushes save, `Ctrl+E` exports PDF. `metaKey` is also accepted.
 - Download `.md` writes the current buffer. Duplicate allocates `name-copy` / `name-copy-N` and navigates to it.
-- Page count is the number of preview sheets. Breaks are between top-level blocks measured at the PDF content width; a block taller than one content box continues on the next sheet.
+- Page count is the number of preview sheets. Breaks are between top-level blocks measured at the PDF content width; a block taller than one content box continues on the next sheet. `h1`/`h2`/`h3` are not left as the last block on a sheet when the following block is cut off with less than two body lines. The sheet clip ends at that break so the heading is not repeated at the bottom of the previous page. PDF export uses the same keep-ahead, not a Markdown page-break token.
 
 Update this AGENTS.md (and parents) after modifying dashboard or editor behavior, adding UI features, or changing CSS.

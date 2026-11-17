@@ -27,7 +27,7 @@ import type {
   TableRow,
   TableCell,
 } from "mdast";
-import { applyPalette, getTheme, listThemes, type ThemeId, type CvTheme } from "@/lib/cv-theme";
+import { applyPalette, getTheme, headingKeepAheadPt, listThemes, type ThemeId, type CvTheme } from "@/lib/cv-theme";
 import { splitFrontmatter } from "@/lib/frontmatter";
 
 for (const face of listThemes()) {
@@ -300,33 +300,62 @@ function renderList(list: List, key: number, depth: number, styles: PdfStyles): 
   );
 }
 
+function renderHeading(
+  node: Heading,
+  key: number,
+  styles: PdfStyles,
+  minPresenceAhead?: number,
+): React.ReactNode {
+  const keep = minPresenceAhead == null ? {} : { minPresenceAhead };
+  if (node.depth === 1) {
+    return (
+      <Text key={key} style={styles.h1} {...keep}>
+        {renderInline(node.children as PhrasingContent[], styles)}
+      </Text>
+    );
+  }
+  if (node.depth === 2) {
+    return (
+      <View key={key} style={styles.h2Wrap} wrap={false} {...keep}>
+        <Text style={styles.h2}>
+          {renderInline(node.children as PhrasingContent[], styles)}
+        </Text>
+      </View>
+    );
+  }
+  return (
+    <Text key={key} style={styles.h3} wrap={false} {...keep}>
+      {renderInline(node.children as PhrasingContent[], styles)}
+    </Text>
+  );
+}
+
+function renderFlow(nodes: RootContent[], styles: PdfStyles, keepAhead: number): React.ReactNode[] {
+  const out: React.ReactNode[] = [];
+  for (let i = 0; i < nodes.length; i += 1) {
+    const node = nodes[i];
+    if (node.type !== "heading") {
+      out.push(renderBlock(node, i, styles));
+      continue;
+    }
+    let end = i + 1;
+    while (end < nodes.length && nodes[end].type === "heading") end += 1;
+    if (end - i === 1) {
+      out.push(renderHeading(node, i, styles, keepAhead));
+      continue;
+    }
+    out.push(
+      <View key={i} wrap={false} minPresenceAhead={keepAhead}>
+        {nodes.slice(i, end).map((heading, k) => renderHeading(heading as Heading, k, styles))}
+      </View>,
+    );
+    i = end - 1;
+  }
+  return out;
+}
+
 function renderBlock(node: RootContent, i: number, styles: PdfStyles): React.ReactNode {
   switch (node.type) {
-    case "heading": {
-      const h = node as Heading;
-      if (h.depth === 1) {
-        return (
-          <Text key={i} style={styles.h1}>
-            {renderInline(h.children as PhrasingContent[], styles)}
-          </Text>
-        );
-      }
-      if (h.depth === 2) {
-        return (
-          <View key={i} style={styles.h2Wrap} wrap={false}>
-            <Text style={styles.h2}>
-              {renderInline(h.children as PhrasingContent[], styles)}
-            </Text>
-          </View>
-        );
-      }
-      return (
-        <Text key={i} style={styles.h3} wrap={false}>
-          {renderInline(h.children as PhrasingContent[], styles)}
-        </Text>
-      );
-    }
-
     case "paragraph": {
       const p = node as Paragraph;
       return (
@@ -405,7 +434,9 @@ export async function downloadCVAsPDF(
   themeId: ThemeId = "source-serif"
 ): Promise<void> {
   const frontmatter = splitFrontmatter(markdown);
-  const styles = buildPdfStyles(applyPalette(getTheme(themeId), frontmatter));
+  const theme = applyPalette(getTheme(themeId), frontmatter);
+  const styles = buildPdfStyles(theme);
+  const keepAhead = headingKeepAheadPt(theme.fontSize, theme.lineHeight);
   const pdfName = fileName.replace(/\.md$/, "") + ".pdf";
   const tree = unified()
     .use(remarkParse)
@@ -415,7 +446,7 @@ export async function downloadCVAsPDF(
   const docElement = (
     <Document>
       <Page size={pageSize} style={styles.page}>
-        {tree.children.map((node, i) => renderBlock(node, i, styles))}
+        {renderFlow(tree.children, styles, keepAhead)}
       </Page>
     </Document>
   );

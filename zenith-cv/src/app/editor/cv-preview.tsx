@@ -11,6 +11,7 @@ import {
 } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
+import { headingKeepAheadPt } from "@/lib/cv-theme";
 
 export type PreviewPageSize = "A4" | "LETTER";
 
@@ -25,6 +26,7 @@ const PAD_Y_MM = 14;
 interface BlockSpan {
   top: number;
   bottom: number;
+  keepWithNext: boolean;
 }
 
 interface CvPreviewProps {
@@ -62,7 +64,51 @@ function mmToPx(mm: number): number {
   return px;
 }
 
-function packPages(blocks: BlockSpan[], contentHeight: number, totalHeight: number): number[] {
+function followerVisible(block: BlockSpan, cursor: number): number {
+  if (block.top >= cursor - 0.5) return 0;
+  return Math.min(cursor, block.bottom) - block.top;
+}
+
+function followerCutOff(block: BlockSpan, cursor: number): boolean {
+  return block.top >= cursor - 0.5 || block.bottom > cursor + 1;
+}
+
+function pullDanglingHeadings(
+  blocks: BlockSpan[],
+  y: number,
+  end: number,
+  minFollow: number,
+): number {
+  let cursor = end;
+  for (let safety = 0; safety < blocks.length; safety += 1) {
+    let lastIndex = -1;
+    for (let i = 0; i < blocks.length; i += 1) {
+      const block = blocks[i];
+      if (block.top >= y - 0.5 && block.top < cursor - 0.5) lastIndex = i;
+    }
+    if (lastIndex < 0) break;
+    const last = blocks[lastIndex];
+    if (last.keepWithNext) {
+      if (last.top <= y + 1) break;
+      const next = blocks[lastIndex + 1];
+      if (!next || !followerCutOff(next, cursor) || followerVisible(next, cursor) >= minFollow) break;
+      cursor = last.top;
+      continue;
+    }
+    const prev = blocks[lastIndex - 1];
+    if (!prev?.keepWithNext || prev.top <= y + 1) break;
+    if (!followerCutOff(last, cursor) || followerVisible(last, cursor) >= minFollow) break;
+    cursor = prev.top;
+  }
+  return cursor;
+}
+
+function packPages(
+  blocks: BlockSpan[],
+  contentHeight: number,
+  totalHeight: number,
+  minFollow: number,
+): number[] {
   if (totalHeight <= contentHeight + 1) return [0];
   const offsets: number[] = [];
   let y = 0;
@@ -78,6 +124,7 @@ function packPages(blocks: BlockSpan[], contentHeight: number, totalHeight: numb
         break;
       }
     }
+    end = pullDanglingHeadings(blocks, y, end, minFollow);
     if (end <= y + 1) end = Math.min(totalHeight, y + contentHeight);
     y = end;
   }
@@ -123,6 +170,7 @@ export function CvPreview({ pageSize, cssVars, body, highlightPattern, onPageCou
   const [offsets, setOffsets] = useState<number[]>([0]);
   const [pageWidthPx, setPageWidthPx] = useState(0);
   const [pageHeightPx, setPageHeightPx] = useState(0);
+  const [contentHeightPx, setContentHeightPx] = useState(0);
   const page = PAGE_MM[pageSize];
   const contentWidthMm = page.width - PAD_X_MM * 2;
   const contentHeightMm = page.height - PAD_Y_MM * 2;
@@ -151,18 +199,24 @@ export function CvPreview({ pageSize, cssVars, body, highlightPattern, onPageCou
         const rect = el.getBoundingClientRect();
         const marginTop = parseFloat(getComputedStyle(el).marginTop) || 0;
         const marginBottom = parseFloat(getComputedStyle(el).marginBottom) || 0;
+        const tag = el.tagName;
         return {
           top: Math.max(0, rect.top - root.top - marginTop),
           bottom: rect.bottom - root.top + marginBottom,
+          keepWithNext: tag === "H1" || tag === "H2" || tag === "H3",
         };
       });
+      const fontPt = parseFloat(measurer.style.getPropertyValue("--cv-size")) || 10.5;
+      const leading = parseFloat(measurer.style.getPropertyValue("--cv-leading")) || 1.55;
+      const minFollow = mmToPx((headingKeepAheadPt(fontPt, leading) * 25.4) / 72);
       const total = Math.max(measurer.scrollHeight, blocks.length > 0 ? blocks[blocks.length - 1].bottom : 0);
-      const nextOffsets = packPages(blocks, contentHeight, total);
+      const nextOffsets = packPages(blocks, contentHeight, total, minFollow);
       startTransition(() => {
         setScale(nextScale);
         setOffsets(nextOffsets);
         setPageWidthPx(widthPx);
         setPageHeightPx(heightPx);
+        setContentHeightPx(contentHeight);
         onPageCount(nextOffsets.length);
       });
     };
@@ -223,7 +277,12 @@ export function CvPreview({ pageSize, cssVars, body, highlightPattern, onPageCou
               >
                 <div
                   className="cv-sheet-clip overflow-hidden"
-                  style={{ height: `${contentHeightMm}mm`, margin: `${PAD_Y_MM}mm ${PAD_X_MM}mm` }}
+                  style={{
+                    height: contentHeightPx > 0
+                      ? `${Math.min(contentHeightPx, (offsets[index + 1] ?? offset + contentHeightPx) - offset)}px`
+                      : `${contentHeightMm}mm`,
+                    margin: `${PAD_Y_MM}mm ${PAD_X_MM}mm`,
+                  }}
                 >
                   <div className="cv-sheet-flow" style={{ marginTop: -offset }}>
                     <div className="cv-content" style={cssVars}>

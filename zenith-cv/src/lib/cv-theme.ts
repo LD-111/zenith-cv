@@ -164,6 +164,10 @@ export function getTheme(id: ThemeId = _themeId): CvTheme {
   return THEMES[id] ?? THEMES[DEFAULT_THEME_ID];
 }
 
+export function headingKeepAheadPt(fontSize: number, lineHeight: number): number {
+  return fontSize * lineHeight * 2;
+}
+
 export function themeCssVars(theme: CvTheme): Record<string, string> {
   return {
     "--cv-font": theme.previewFont,
