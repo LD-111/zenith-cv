@@ -98,7 +98,7 @@ Three exported template strings:
 - `DEMO_TEMPLATE_PM` — Product Manager variant
 - `BLANK_TEMPLATE` — skeleton with only H1 + contact
 
-Used by create modal and demo cards. Keep format compatible with the PDF renderer and preview CSS.
+Used by create modal and demo cards. Keep format compatible with the PDF renderer and preview CSS. Do not put a `---` thematic break before `##`; preview and PDF already draw a rule above and below those headings.
 
 ### pdf-export.tsx
 

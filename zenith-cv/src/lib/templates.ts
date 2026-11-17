@@ -2,13 +2,9 @@ export const DEFAULT_TEMPLATE = `# Alex Rivera
 **Senior Software Engineer** | San Francisco, CA
 alex.rivera@email.com · (415) 555-0192 · [linkedin.com/in/alexrivera](https://linkedin.com) · [github.com/alexrivera](https://github.com)
 
----
-
 ## Summary
 
 Results-driven Senior Software Engineer with 7+ years of experience designing and delivering scalable distributed systems and developer-facing APIs. Passionate about clean architecture, developer experience, and building products that serve millions of users. Proven track record of leading cross-functional teams and shipping high-impact features on time.
-
----
 
 ## Technical Skills
 
@@ -17,8 +13,6 @@ Results-driven Senior Software Engineer with 7+ years of experience designing an
 **Infrastructure:** Kubernetes, Docker, AWS (ECS, Lambda, RDS, S3), Terraform, GitHub Actions
 **Databases:** PostgreSQL, Redis, DynamoDB, ClickHouse
 **Practices:** TDD, CI/CD, Domain-Driven Design, API Design, Code Review
-
----
 
 ## Experience
 
@@ -45,8 +39,6 @@ Results-driven Senior Software Engineer with 7+ years of experience designing an
 - Implemented real-time inventory sync across 3 warehouse systems using event-driven architecture (RabbitMQ).
 - Contributed to open-source cart library with 2.4k GitHub stars.
 
----
-
 ## Projects
 
 ### **Vela** — Open-Source CLI Deployment Tool
@@ -59,14 +51,10 @@ A developer-friendly CLI for deploying containerised applications to any cloud p
 
 A reliable, horizontally-scalable cron-as-a-service scheduler with at-least-once delivery guarantees, sub-second precision, and a web UI for monitoring job history.
 
----
-
 ## Education
 
 **B.S. Computer Science** — University of Texas at Austin · *2013 – 2017*
 Relevant coursework: Distributed Systems, Algorithms & Complexity, Compilers, Database Systems
-
----
 
 ## Certifications & Recognition
 
@@ -79,13 +67,9 @@ export const DEMO_TEMPLATE_PM = `# Jordan Kim
 **Senior Product Manager** | New York, NY
 jordan.kim@email.com · (212) 555-0147 · [linkedin.com/in/jordankim](https://linkedin.com) · [jordankim.io](https://jordankim.io)
 
----
-
 ## Summary
 
 Driven Product Manager with 6+ years of experience turning customer insights into shipped features across B2B SaaS and consumer platforms. Skilled at aligning engineering, design, and business stakeholders around a shared roadmap. Track record of growing activation rates, reducing churn, and launching zero-to-one products used by millions.
-
----
 
 ## Core Competencies
 
@@ -93,8 +77,6 @@ Driven Product Manager with 6+ years of experience turning customer insights int
 **Delivery:** Agile/Scrum, JIRA, Linear, Sprint Planning, Roadmap Prioritisation
 **Analytics:** Mixpanel, Amplitude, SQL, A/B Testing, Funnel Analysis
 **Collaboration:** Figma, Notion, Confluence, Miro, Loom
-
----
 
 ## Experience
 
@@ -113,13 +95,9 @@ Driven Product Manager with 6+ years of experience turning customer insights int
 - Ran 25+ user interviews per quarter; synthesised insights into actionable epics, cutting feature rework cycles by 35%.
 - Established NPS tracking and closed-loop feedback, raising NPS from 32 to 61 over 18 months.
 
----
-
 ## Education
 
 **B.A. Economics & Computer Science** — Columbia University · *2014 – 2018*
-
----
 
 ## Certifications & Speaking
 
@@ -132,13 +110,9 @@ export const BLANK_TEMPLATE = `# Your Name
 **Job Title** | City, Country
 email@example.com · [linkedin.com/in/yourprofile](https://linkedin.com) · [github.com/yourhandle](https://github.com)
 
----
-
 ## Summary
 
 Write a brief professional summary here.
-
----
 
 ## Experience
 
@@ -148,13 +122,9 @@ Write a brief professional summary here.
 - Key achievement or responsibility
 - Key achievement or responsibility
 
----
-
 ## Education
 
 **Degree** — University Name · *Start – End Year*
-
----
 
 ## Skills
 
