@@ -13,6 +13,7 @@ export interface CvTheme {
   heading: string;
   muted: string;
   accent: string;
+  link: string;
   rule: string;
   softRule: string;
   h1Size: number;
@@ -39,6 +40,7 @@ export const SERIF_THEME: CvTheme = {
   heading: "#111827",
   muted: "#6b7280",
   accent: "#4338ca",
+  link: "#4338ca",
   rule: "#e5e7eb",
   softRule: "#e0e7ff",
   h1Size: 22,
@@ -65,6 +67,7 @@ export const SANS_THEME: CvTheme = {
   heading: "#111827",
   muted: "#4b5563",
   accent: "#1e3a5f",
+  link: "#1e3a5f",
   rule: "#d4d4d4",
   softRule: "#e5e7eb",
   h1Size: 16,
@@ -106,6 +109,7 @@ export function themeCssVars(theme: CvTheme): Record<string, string> {
     "--cv-heading": theme.heading,
     "--cv-muted": theme.muted,
     "--cv-accent": theme.accent,
+    "--cv-link": theme.link,
     "--cv-rule": theme.rule,
     "--cv-soft-rule": theme.softRule,
     "--cv-h1": `${theme.h1Size}pt`,
@@ -118,4 +122,38 @@ export function themeCssVars(theme: CvTheme): Record<string, string> {
     "--cv-p-bottom": `${theme.pMarginBottom}px`,
     "--cv-em-size": `${theme.emSize}pt`,
   };
+}
+
+export interface CvPaletteColors {
+  primary: string;
+  secondary: string;
+  tertiary: string;
+}
+
+export function parseCssHex(value: string): string | null {
+  const match = value.trim().match(/^#([0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/);
+  if (!match) return null;
+  const hex = match[1];
+  const full = hex.length === 3 ? hex.split("").map((channel) => channel + channel).join("") : hex;
+  return `#${full.toLowerCase()}`;
+}
+
+function mixTowardWhite(hex: string, white: number): string {
+  const n = parseInt(hex.slice(1), 16);
+  const channel = (c: number) => Math.round(c + (255 - c) * white).toString(16).padStart(2, "0");
+  return `#${channel((n >> 16) & 255)}${channel((n >> 8) & 255)}${channel(n & 255)}`;
+}
+
+export function applyPalette(theme: CvTheme, colors: CvPaletteColors): CvTheme {
+  const next: CvTheme = { ...theme };
+  const primary = parseCssHex(colors.primary);
+  const secondary = parseCssHex(colors.secondary);
+  const tertiary = parseCssHex(colors.tertiary);
+  if (primary) next.heading = primary;
+  if (secondary) {
+    next.accent = secondary;
+    next.softRule = mixTowardWhite(secondary, 0.8);
+  }
+  if (tertiary) next.link = tertiary;
+  return next;
 }

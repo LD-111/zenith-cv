@@ -33,8 +33,8 @@ import {
   createVirtualCV,
   markVirtualDownloaded,
 } from "@/lib/virtual-store";
-import { getTheme, getThemeId, setThemeId, themeCssVars, type ThemeId } from "@/lib/cv-theme";
-import { splitFrontmatter } from "@/lib/frontmatter";
+import { applyPalette, getTheme, getThemeId, setThemeId, themeCssVars, type ThemeId } from "@/lib/cv-theme";
+import { setPalette, splitFrontmatter } from "@/lib/frontmatter";
 import { SNIPPETS } from "@/lib/snippets";
 import { analyzeTailor } from "@/lib/tailor";
 
@@ -114,9 +114,15 @@ export default function EditorPage() {
   const editorRef = useRef<HTMLTextAreaElement>(null);
   const theme = getTheme(themeId);
   const meta = splitFrontmatter(markdown);
+  const previewTheme = applyPalette(theme, {
+    primary: meta.primary,
+    secondary: meta.secondary,
+    tertiary: meta.tertiary,
+  });
+  const paletteSet = Boolean(meta.primary || meta.secondary || meta.tertiary);
   const report = useMemo(
-    () => (tailorOpen && jobText.trim() ? analyzeTailor(meta.body, jobText) : null),
-    [tailorOpen, jobText, meta.body]
+    () => (tailorOpen && jobText.trim() ? analyzeTailor(splitFrontmatter(markdown).body, jobText) : null),
+    [tailorOpen, jobText, markdown]
   );
   const highlightPattern = useMemo(() => {
     if (!report || report.overlap.length === 0) return null;
@@ -768,7 +774,41 @@ export default function EditorPage() {
             <span className="text-xs font-medium text-neutral-400 uppercase tracking-widest">
               Preview
             </span>
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 flex-wrap justify-end">
+              <div className="flex items-center gap-2">
+                {(
+                  [
+                    ["primary", "Primary", meta.primary || theme.heading],
+                    ["secondary", "Secondary", meta.secondary || theme.accent],
+                    ["tertiary", "Tertiary", meta.tertiary || theme.link],
+                  ] as const
+                ).map(([key, label, value]) => (
+                  <label key={key} className="flex items-center gap-1 text-[10px] font-mono text-neutral-500">
+                    {label}
+                    <input
+                      type="color"
+                      aria-label={`${label} color`}
+                      value={value}
+                      onChange={(e) => {
+                        const next = e.target.value;
+                        setMarkdown((prev) => setPalette(prev, { [key]: next }));
+                      }}
+                      className="h-4 w-5 cursor-pointer rounded-sm border border-neutral-200 bg-white p-0"
+                    />
+                  </label>
+                ))}
+                {paletteSet && (
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setMarkdown((prev) => setPalette(prev, { primary: "", secondary: "", tertiary: "" }))
+                    }
+                    className="px-1.5 py-0.5 text-[10px] font-mono text-neutral-500 hover:text-neutral-800"
+                  >
+                    Reset
+                  </button>
+                )}
+              </div>
               <div className="flex rounded-md border border-neutral-200 overflow-hidden">
                 {(["serif", "sans"] as const).map((id) => (
                   <button
@@ -818,7 +858,7 @@ export default function EditorPage() {
           <div className="flex-1 p-8 print:p-0">
             <article
               className={`cv-content mx-auto w-full bg-white px-[16mm] py-[14mm] shadow-sm print:shadow-none print:max-w-none print:min-h-0 print:px-0 print:py-0 ${pageSize === "LETTER" ? "max-w-[215.9mm] min-h-[279.4mm]" : "max-w-[210mm] min-h-[297mm]"}`}
-              style={themeCssVars(theme)}
+              style={themeCssVars(previewTheme)}
             >
               <div ref={previewContentRef}>
               <ReactMarkdown

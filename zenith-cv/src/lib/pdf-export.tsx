@@ -26,7 +26,7 @@ import type {
   TableRow,
   TableCell,
 } from "mdast";
-import { getTheme, type ThemeId, type CvTheme } from "@/lib/cv-theme";
+import { applyPalette, getTheme, type ThemeId, type CvTheme } from "@/lib/cv-theme";
 import { splitFrontmatter } from "@/lib/frontmatter";
 
 function buildPdfStyles(theme: CvTheme) {
@@ -114,7 +114,7 @@ function buildPdfStyles(theme: CvTheme) {
     fontSize: theme.emSize,
   },
   link: {
-    color: theme.accent,
+    color: theme.link,
     textDecoration: "none",
   },
   inlineCode: {
@@ -380,12 +380,13 @@ export async function downloadCVAsPDF(
   pageSize: PdfPageSize = "A4",
   themeId: ThemeId = "serif"
 ): Promise<void> {
-  const styles = buildPdfStyles(getTheme(themeId));
+  const frontmatter = splitFrontmatter(markdown);
+  const styles = buildPdfStyles(applyPalette(getTheme(themeId), frontmatter));
   const pdfName = fileName.replace(/\.md$/, "") + ".pdf";
   const tree = unified()
     .use(remarkParse)
     .use(remarkGfm)
-    .parse(splitFrontmatter(markdown).body) as Root;
+    .parse(frontmatter.body) as Root;
 
   const docElement = (
     <Document>

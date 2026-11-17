@@ -94,7 +94,7 @@ body {
 
 .cv-strong {
   font-weight: 700;
-  color: #111827;
+  color: var(--cv-heading, #111827);
 }
 
 .cv-em {
@@ -104,7 +104,7 @@ body {
 }
 
 .cv-a {
-  color: var(--cv-accent, #4338ca);
+  color: var(--cv-link, var(--cv-accent, #4338ca));
   text-decoration: none;
 }
 

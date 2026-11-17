@@ -42,8 +42,9 @@ Derives `initialFileName` and initial virtual name from store or slug.
 ### Other Actions
 - Back: flush save immediately, then push("/").
 - Load .md: replaces markdown (triggers autosave).
-- Export PDF: dynamic import pdf-export, `downloadCVAsPDF(markdown, fileName, pageSize, themeId)`. Spinner state. A4 or Letter, Serif or Sans, from the preview header. Frontmatter is stripped inside the exporter.
-- Preview renders `splitFrontmatter(markdown).body` with `themeCssVars`. Article is `w-full` with `max-w` of the selected page (210mm A4 / 215.9mm Letter) so the card shrinks on narrow panes instead of overflowing. Page budget follows the rendered wrap.
+- Export PDF: dynamic import pdf-export, `downloadCVAsPDF(markdown, fileName, pageSize, themeId)`. Spinner state. A4 or Letter, Serif or Sans, from the preview header. Frontmatter is stripped inside the exporter after `primary` / `secondary` / `tertiary` are applied to the theme.
+- Preview renders `splitFrontmatter(markdown).body` with `themeCssVars(applyPalette(theme, meta))`. Article is `w-full` with `max-w` of the selected page (210mm A4 / 215.9mm Letter) so the card shrinks on narrow panes instead of overflowing. Page budget follows the rendered wrap.
+- Preview header color inputs (Primary, Secondary, Tertiary) call `setPalette` and the existing markdown setter, so autosave writes them into frontmatter. Reset clears all three keys. Unset roles keep the Serif or Sans default. Pickers show the effective color.
 - Insert menu writes a snippet at the textarea selection.
 - Tailor panel holds a job description in component state only. Overlap terms are `<mark>`ed in the preview. PDF export does not include marks.
 - Download `.md` in virtual mode calls `markVirtualDownloaded`.

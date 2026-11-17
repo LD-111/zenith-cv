@@ -108,7 +108,7 @@ Used by create modal and demo cards. Keep format compatible with the PDF rendere
 - Parses markdown with `unified` + `remark-parse` + `remark-gfm` → mdast. Those three are direct `package.json` dependencies.
 - Recursive walk to emit @react-pdf/renderer elements.
 - Supports headings, paragraphs, lists (ordered markers + one nested indent), links, tables, code (Courier), hr, blockquote, strong/em.
-- `downloadCVAsPDF(markdown, fileName, pageSize, themeId)` — `pageSize` is `"A4"` or `"LETTER"`. `themeId` is `"serif"` or `"sans"`. `buildPdfStyles` runs per call; the resulting `StyleSheet` is passed into `renderInline` / `renderList` / `renderBlock` so concurrent exports with different themes cannot clobber each other. Leading frontmatter is stripped before parse.
+- `downloadCVAsPDF(markdown, fileName, pageSize, themeId)` — `pageSize` is `"A4"` or `"LETTER"`. `themeId` is `"serif"` or `"sans"`. Palette keys in frontmatter are applied with `applyPalette` before `buildPdfStyles`. The resulting `StyleSheet` is passed into `renderInline` / `renderList` / `renderBlock` so concurrent exports with different themes cannot clobber each other. Leading frontmatter is stripped before parse. Link color is `theme.link`.
 - Page flow, margins, fonts (Times-Roman family to match Georgia in preview).
 - No print CSS path for export (separate from Ctrl+P).
 
@@ -129,11 +129,15 @@ IndexedDB (`zenith-cv` / `handles` / `directory`) stores the directory handle on
 
 ### cv-theme.ts
 
-`SERIF_THEME` and `SANS_THEME`. `themeCssVars` drives preview CSS variables. PDF `StyleSheet` is built from the same object. Module `getThemeId` / `setThemeId` survives client navigation, not disk. Sans is Helvetica, single column, no icons.
+`SERIF_THEME` and `SANS_THEME`. `themeCssVars` drives preview CSS variables, including `--cv-link`. PDF `StyleSheet` is built from the same object. Module `getThemeId` / `setThemeId` survives client navigation, not disk. Sans is Helvetica, single column, no icons.
+
+`parseCssHex` accepts `#rgb` / `#rrggbb` and returns lowercase `#rrggbb`, or null. `applyPalette(theme, { primary, secondary, tertiary })` copies the theme and overrides only valid colors: primary → `heading` (H1, H3, bold), secondary → `accent` plus `softRule` mixed 80% toward white (H2 and its underline), tertiary → `link`. Empty strings leave the theme token.
 
 ### frontmatter.ts
 
-`splitFrontmatter` reads a leading `---` block. `target` and `notes` are returned separately. The body is what preview and PDF render.
+`splitFrontmatter` reads a leading `---` block. `target` and `notes` are returned separately. Optional `primary`, `secondary`, and `tertiary` are returned as `#rrggbb` or `""` when missing or invalid. The body is what preview and PDF render.
+
+`setPalette(markdown, patch)` inserts, replaces, or deletes those three keys. Empty string deletes the key. Other lines (`target`, `notes`, unknown keys) stay. If nothing remains in the block, the `---` wrapper is removed.
 
 ### snippets.ts
 

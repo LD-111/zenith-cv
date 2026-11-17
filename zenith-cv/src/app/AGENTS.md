@@ -85,7 +85,7 @@ const mode: EditorMode = isVirtualId(rawId) ? "virtual" : "local";
 
 - Imports tailwind.
 - `.cv-*` : h1–h3 sizes/weights, p, ul, li, a, hr, strong, em, code (font + bg), pre, blockquote, table (border, thead, td padding), etc.
-- Colors chosen for readability (indigo for h2 bottom border).
+- Colors come from `cv-theme` tokens (`--cv-heading`, `--cv-accent`, `--cv-link`, `--cv-soft-rule`). A per-CV palette can override them.
 - Preview stays light even in dark app.
 - Legacy print rules retained (may be removed later).
 

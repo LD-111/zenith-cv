@@ -24,7 +24,7 @@ Typical resume tools trap data in a SaaS dashboard, emit PDF that ATS parsers st
 - **Templates** — Engineering, Product Manager, and Blank. One-click demos. Upload an existing `.md`.
 - **Autosave** — 500ms debounce, stream writes locally, flush on navigate. `Ctrl+S` saves, `Ctrl+E` exports PDF.
 - **Rename, duplicate, download** — Inline rename on cards and in the editor. Duplicate opens a `-copy`. Download `.md` is the persist path in sandbox.
-- **Themes** — Serif or compact Sans. One token set drives preview CSS and PDF.
+- **Themes** — Serif or compact Sans. One token set drives preview CSS and PDF. Optional `primary`, `secondary`, and `tertiary` frontmatter colors override titles, section headings, and links.
 - **Tailoring** — Insert experience, skills, education, or project blocks. Hidden `target` / `notes` frontmatter. Session-only job-description overlap check.
 - **Remembered folder** — Chrome/Edge can reopen the last directory after refresh (handle only). Disconnect forgets it.
 
